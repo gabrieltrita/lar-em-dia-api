@@ -1,0 +1,26 @@
+module Auth
+  class TwoFactorChallenge
+    TTL = 5.minutes
+    TYPE = "2fa_challenge".freeze
+
+    class << self
+      def issue(user)
+        JsonWebToken.encode({ sub: user.id, type: TYPE }, expires_at: TTL.from_now)
+      end
+
+      def verify(token)
+        payload = JsonWebToken.decode(token.to_s, type: TYPE)
+        raise InvalidToken.new("2FA challenge expired. Please log in again.", code: "two_factor_challenge_expired") if TokenDenylist.include?(payload["jti"])
+
+        user = User.not_anonymized.find_by(id: payload["sub"])
+        raise InvalidToken if user.nil? || user.access_locked?
+
+        [ user, payload ]
+      end
+
+      def consume!(payload)
+        TokenDenylist.add(payload["jti"], payload["exp"])
+      end
+    end
+  end
+end

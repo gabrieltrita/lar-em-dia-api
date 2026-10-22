@@ -1,0 +1,104 @@
+name: trita
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+  image: trita-api:dev
+  env_file: .env
+  environment:
+    DATABASE_HOST: db
+    DATABASE_PORT: 5432
+    REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+    SIDEKIQ_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    SMTP_ADDRESS: mailhog
+    SMTP_PORT: 1025
+  volumes:
+    - .:/rails
+    - bundle:/usr/local/bundle
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    mailhog:
+      condition: service_started
+  stdin_open: true
+  tty: true
+
+services:
+  api:
+    <<: *app
+    container_name: trita-api
+    command: ./bin/rails server -b 0.0.0.0 -p 3000
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  sidekiq:
+    <<: *app
+    container_name: trita-sidekiq
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    depends_on:
+      api:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    container_name: trita-db
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: trita-redis
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: trita-mailhog
+    platform: linux/amd64
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${BIND_ADDRESS:-127.0.0.1}:${MAILHOG_WEB_PORT:-8025}:8025"
+
+  adminer:
+    image: adminer:4
+    container_name: trita-adminer
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      - db
+
+volumes:
+  postgres:
+  redis:
+  bundle:

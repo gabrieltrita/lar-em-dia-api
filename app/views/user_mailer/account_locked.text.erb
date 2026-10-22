@@ -1,0 +1,5 @@
+Account temporarily locked
+
+Hi <%= @user.first_name %>, we detected several failed login attempts and locked your account until <%= l(@locked_until, format: :long) %>.
+
+If this was not you, we recommend resetting your password (it also unlocks the account): <%= @forgot_url %>

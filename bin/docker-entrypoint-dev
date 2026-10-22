@@ -1,0 +1,11 @@
+#!/bin/bash -e
+
+bundle check > /dev/null 2>&1 || bundle install
+
+rm -f /rails/tmp/pids/server.pid
+
+if [[ "$*" == *"rails server"* ]]; then
+  ./bin/rails db:prepare
+fi
+
+exec "${@}"

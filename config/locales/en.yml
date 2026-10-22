@@ -1,0 +1,17 @@
+en:
+  roles:
+    user: "User"
+    admin: "Administrator"
+  consents:
+    required: "You must accept %{kind}"
+    kinds:
+      terms: "the Terms of Use"
+      privacy: "the Privacy Policy"
+      marketing: "marketing communications"
+  activerecord:
+    errors:
+      models:
+        user:
+          attributes:
+            password:
+              weak_password: "must include uppercase, lowercase letters and numbers"

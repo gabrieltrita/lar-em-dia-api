@@ -1,0 +1,43 @@
+require "rails_helper"
+
+RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
+  around do |example|
+    Rack::Attack.enabled = true
+    Rack::Attack.reset!
+    example.run
+  ensure
+    Rack::Attack.enabled = false
+  end
+
+  def login_from(ip, email)
+    post "/api/v1/auth/login", params: { email: email, password: "Errada@123" }, as: :json, env: { "REMOTE_ADDR" => ip }
+  end
+
+  it "throttles by the email in the JSON body, even across different IPs" do
+    5.times { |i| login_from("10.0.0.#{i + 1}", "alvo@example.com") }
+    expect(response).to have_http_status(:unauthorized)
+
+    login_from("10.0.0.99", "ALVO@example.com")
+    expect(response).to have_http_status(:too_many_requests)
+    expect(json.dig("error", "code")).to eq("rate_limited")
+    expect(response.headers["Retry-After"]).to eq("60")
+  end
+
+  it "throttles by IP" do
+    10.times { |i| login_from("10.1.1.1", "user#{i}@example.com") }
+    login_from("10.1.1.1", "outro@example.com")
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
+  it "throttles second factor attempts" do
+    5.times { post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" } }
+    post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" }
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
+  it "keeps the request body readable by Rails" do
+    user = create(:user, email: "ok@example.com", password: "Senha@123")
+    post "/api/v1/auth/login", params: { email: user.email, password: "Senha@123" }, as: :json
+    expect(response).to have_http_status(:ok)
+  end
+end
