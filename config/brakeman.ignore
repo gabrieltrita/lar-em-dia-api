@@ -1,0 +1,16 @@
+{
+  "ignored_warnings": [
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "f2cd25bcdfebbe90a72711a6e6d6978c696534d84d24be8bc5918f85378aaaa6",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/api/v1/admin/users_controller.rb",
+      "line": 72,
+      "code": "params.permit(:email, :first_name, :last_name, :phone, :role, :password, :password_confirmation)",
+      "note": "Endpoint exclusivo de admin; troca de role é autorizada por UserPolicy#change_role?"
+    }
+  ],
+  "brakeman_version": "x"
+}

@@ -1,0 +1,26 @@
+pt-BR:
+  roles:
+    user: "Usuário"
+    admin: "Administrador"
+  activerecord:
+    errors:
+      models:
+        user:
+          attributes:
+            password:
+              weak_password: "deve conter letras maiúsculas, minúsculas e números"
+    attributes:
+      user:
+        email: "E-mail"
+        first_name: "Nome"
+        last_name: "Sobrenome"
+        phone: "Telefone"
+        password: "Senha"
+        password_confirmation: "Confirmação de senha"
+        role: "Perfil"
+  consents:
+    required: "Você precisa aceitar %{kind}"
+    kinds:
+      terms: "os Termos de Uso"
+      privacy: "a Política de Privacidade"
+      marketing: "comunicações de marketing"

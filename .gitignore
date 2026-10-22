@@ -1,0 +1,21 @@
+/.bundle
+/log/*
+/tmp/*
+!/log/.keep
+!/tmp/.keep
+/tmp/pids/*
+!/tmp/pids/.keep
+/storage/*
+!/storage/.keep
+/config/master.key
+/config/credentials/*.key
+/coverage
+
+# Variáveis de ambiente com segredos
+.env
+.env.*
+!.env.example
+
+.DS_Store
+.idea
+.vscode

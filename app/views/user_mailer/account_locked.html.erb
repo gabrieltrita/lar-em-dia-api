@@ -1,0 +1,3 @@
+<h1>Conta bloqueada temporariamente</h1>
+<p>Olá, <%= @user.first_name %>. Detectamos várias tentativas de login com senha errada e bloqueamos sua conta até <%= l(@locked_until, format: :long) %>.</p>
+<p style="color:#666;font-size:13px">Se não foi você, recomendamos redefinir a senha (isso também desbloqueia a conta): <%= @forgot_url %></p>

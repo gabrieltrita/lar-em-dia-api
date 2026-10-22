@@ -1,0 +1,5 @@
+Conta bloqueada temporariamente
+
+Olá, <%= @user.first_name %>. Detectamos várias tentativas de login com senha errada e bloqueamos sua conta até <%= l(@locked_until, format: :long) %>.
+
+Se não foi você, recomendamos redefinir a senha (isso também desbloqueia a conta): <%= @forgot_url %>

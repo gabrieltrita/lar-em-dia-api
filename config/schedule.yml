@@ -1,0 +1,6 @@
+# Jobs agendados (sidekiq-cron). Horários em UTC.
+maintenance_cleanup:
+  cron: "0 6 * * *" # 03:00 em São Paulo
+  class: "MaintenanceCleanupJob"
+  queue: default
+  description: "Remove refresh tokens expirados e cadastros não confirmados"
