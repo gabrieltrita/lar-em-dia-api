@@ -25,7 +25,7 @@ class ApplicationPolicy
     end
 
     def resolve
-      raise NoMethodError, "Defina #resolve em #{self.class}"
+      raise NoMethodError, "Define #resolve in #{self.class}"
     end
 
     private

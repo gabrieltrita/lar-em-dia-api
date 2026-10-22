@@ -1,14 +1,7 @@
 module Api
   module V1
     module Me
-      # Gerenciamento do 2FA (TOTP) do próprio usuário.
-      #
-      # Fluxo de ativação:
-      #   1. POST /me/two_factor/setup  { current_password }  -> { secret, provisioning_uri }
-      #      (o front mostra o provisioning_uri como QR code)
-      #   2. POST /me/two_factor/enable { code }              -> { backup_codes } (exibir uma única vez)
       class TwoFactorController < ApplicationController
-        # GET /api/v1/me/two_factor
         def show
           render json: { data: { enabled: current_user.two_factor_enabled?, required: current_user.admin?, backup_codes_remaining: current_user.backup_codes_remaining } }
         end
@@ -23,20 +16,18 @@ module Api
 
         def enable
           codes = current_user.enable_two_factor!(params.require(:code))
-          raise ::Auth::ReauthenticationFailed, "Código inválido. Confira o horário do celular e tente de novo." if codes.nil?
+          raise ::Auth::ReauthenticationFailed.new("Invalid code. Check the device clock and try again.", code: "invalid_two_factor_code") if codes.nil?
 
-          # Sessões abertas antes do 2FA são encerradas (menos a atual).
           current_user.revoke_all_sessions!(except_family: current_session_id)
           AuditLog.record!("two_factor.enabled", target: current_user)
           render json: { data: { enabled: true, backup_codes: codes } }
         end
 
-        # DELETE /api/v1/me/two_factor  { current_password, code }
         def destroy
           if current_user.admin?
-            return render_error(status: :forbidden, code: "two_factor_required", message: "Administradores não podem desativar o 2FA.")
+            return render_error(status: :forbidden, code: "two_factor_required", message: "Admins cannot disable 2FA.")
           end
-          return render_error(status: :unprocessable_content, code: "two_factor_not_enabled", message: "2FA não está ativo") unless current_user.two_factor_enabled?
+          return render_error(status: :unprocessable_content, code: "two_factor_not_enabled", message: "2FA is not enabled") unless current_user.two_factor_enabled?
 
           require_current_password!
           require_second_factor!
@@ -47,9 +38,8 @@ module Api
           head :no_content
         end
 
-        # POST /api/v1/me/two_factor/backup_codes  { current_password, code }
         def backup_codes
-          return render_error(status: :unprocessable_content, code: "two_factor_not_enabled", message: "2FA não está ativo") unless current_user.two_factor_enabled?
+          return render_error(status: :unprocessable_content, code: "two_factor_not_enabled", message: "2FA is not enabled") unless current_user.two_factor_enabled?
 
           require_current_password!
           require_second_factor!
@@ -62,7 +52,7 @@ module Api
         private
 
         def already_enabled
-          render_error(status: :unprocessable_content, code: "two_factor_already_enabled", message: "2FA já está ativo")
+          render_error(status: :unprocessable_content, code: "two_factor_already_enabled", message: "2FA is already enabled")
         end
       end
     end

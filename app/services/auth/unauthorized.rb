@@ -1,8 +1,10 @@
 module Auth
-  # Base dos erros de autenticação (viram HTTP 401 em ErrorHandling).
   class Unauthorized < StandardError
-    def initialize(message = "Não autorizado")
-      super
+    attr_reader :code
+
+    def initialize(message = "Unauthorized", code: "unauthorized")
+      super(message)
+      @code = code
     end
   end
 end

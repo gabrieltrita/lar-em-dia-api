@@ -4,16 +4,8 @@ module Api
       class SessionsController < ApplicationController
         skip_before_action :authenticate_user!, only: :create
 
-        # POST /api/v1/auth/login  { email, password }
-        #
-        # Respostas:
-        # - 200 { user, tokens }                               login concluído
-        # - 200 { two_factor_required: true, challenge_token } falta o código 2FA
-        # - 401 credenciais inválidas (inclusive conta bloqueada: mesma mensagem)
-        # - 403 email_not_confirmed (só depois de acertar a senha)
         def create
           email = params.require(:email).to_s
-          # authenticate_by evita timing attack mesmo quando o usuário não existe.
           user = User.authenticate_by(email: email, password: params.require(:password).to_s)
           candidate = user || User.find_by(email: email)
 
@@ -30,7 +22,7 @@ module Api
 
           unless user.confirmed?
             return render_error(status: :forbidden, code: "email_not_confirmed",
-                                message: "Confirme seu e-mail antes de entrar. Você pode pedir um novo link.")
+                                message: "Confirm your email before logging in. You can request a new link.")
           end
 
           if user.two_factor_enabled?
@@ -43,8 +35,6 @@ module Api
           sign_in_and_render(user)
         end
 
-        # DELETE /api/v1/auth/logout   body opcional: { all_devices: true }
-        # Encerra a sessão atual (ou todas) na hora, inclusive o access token.
         def destroy
           ::Auth::TokenDenylist.add(current_token_payload["jti"], current_token_payload["exp"])
 

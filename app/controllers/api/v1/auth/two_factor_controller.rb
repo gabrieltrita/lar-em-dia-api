@@ -1,8 +1,6 @@
 module Api
   module V1
     module Auth
-      # POST /api/v1/auth/two_factor  { challenge_token, code }
-      # Segundo passo do login. `code` aceita TOTP (6 dígitos) ou código de backup.
       class TwoFactorController < ApplicationController
         skip_before_action :authenticate_user!
 
@@ -12,7 +10,7 @@ module Api
           unless user.verify_second_factor(params.require(:code))
             user.register_failed_login!
             AuditLog.record!("auth.two_factor_failed", target: user, actor: nil)
-            raise ::Auth::Unauthorized, "Código de verificação inválido"
+            raise ::Auth::Unauthorized.new("Invalid verification code", code: "invalid_two_factor_code")
           end
 
           ::Auth::TwoFactorChallenge.consume!(payload)

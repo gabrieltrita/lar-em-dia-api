@@ -1,7 +1,6 @@
 module Api
   module V1
     module Admin
-      # Toda rota em /api/v1/admin exige role admin COM 2FA ativo.
       class BaseController < ApplicationController
         include Paginatable
 
@@ -14,7 +13,7 @@ module Api
           return if current_user.two_factor_enabled?
 
           render_error(status: :forbidden, code: "two_factor_setup_required",
-                       message: "Ative o 2FA em /api/v1/me/two_factor para acessar a área administrativa.")
+                       message: "Enable 2FA at /api/v1/me/two_factor to access the admin area.")
         end
       end
     end

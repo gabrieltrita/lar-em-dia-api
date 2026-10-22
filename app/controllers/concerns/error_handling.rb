@@ -1,5 +1,3 @@
-# Formato padrão de erro:
-#   { "error": { "code": "...", "message": "...", "details": {...} } }
 module ErrorHandling
   extend ActiveSupport::Concern
 
@@ -26,13 +24,23 @@ module ErrorHandling
     render_error(
       status: :unprocessable_content,
       code: "validation_failed",
-      message: "Dados inválidos",
-      details: record.errors.to_hash(true)
+      message: "Invalid data",
+      details: validation_details(record.errors)
     )
   end
 
+  def validation_details(errors)
+    errors.group_by(&:attribute).transform_values do |list|
+      list.map { |error| { code: validation_code(error), message: error.full_message } }
+    end
+  end
+
+  def validation_code(error)
+    error.options[:message].is_a?(Symbol) ? error.options[:message].to_s : error.type.to_s
+  end
+
   def handle_not_found(_error)
-    render_error(status: :not_found, code: "not_found", message: "Recurso não encontrado")
+    render_error(status: :not_found, code: "not_found", message: "Resource not found")
   end
 
   def handle_record_invalid(error)
@@ -44,20 +52,20 @@ module ErrorHandling
   end
 
   def handle_forbidden(_error)
-    render_error(status: :forbidden, code: "forbidden", message: "Você não tem permissão para esta ação")
+    render_error(status: :forbidden, code: "forbidden", message: "You are not allowed to perform this action")
   end
 
   def handle_unauthorized(error)
-    render_error(status: :unauthorized, code: "unauthorized", message: error.message)
+    render_error(status: :unauthorized, code: error.code, message: error.message)
   end
 
   def handle_reauthentication_failed(error)
-    render_error(status: :unprocessable_content, code: "reauthentication_failed", message: error.message)
+    render_error(status: :unprocessable_content, code: error.code, message: error.message)
   end
 
   def handle_internal_error(error)
     Rails.logger.error("[#{error.class}] #{error.message}\n#{error.backtrace&.first(10)&.join("\n")}")
     Sentry.capture_exception(error) if Sentry.initialized?
-    render_error(status: :internal_server_error, code: "internal_error", message: "Erro interno do servidor")
+    render_error(status: :internal_server_error, code: "internal_error", message: "Internal server error")
   end
 end

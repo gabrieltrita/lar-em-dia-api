@@ -1,4 +1,3 @@
-# Autenticação via header: Authorization: Bearer <access_token>
 module Authenticatable
   extend ActiveSupport::Concern
 
@@ -22,18 +21,17 @@ module Authenticatable
 
   def authenticate_user!
     token = bearer_token
-    raise Auth::Unauthorized, "Token de acesso ausente" if token.blank?
+    raise Auth::Unauthorized.new("Missing access token", code: "missing_token") if token.blank?
 
     payload = Auth::JsonWebToken.decode(token, type: "access")
-    raise Auth::InvalidToken, "Token revogado" if Auth::TokenDenylist.include?(payload["jti"])
-    raise Auth::InvalidToken, "Sessão encerrada" if Auth::TokenDenylist.session_revoked?(payload["sid"])
+    raise Auth::InvalidToken.new("Token revoked", code: "token_revoked") if Auth::TokenDenylist.include?(payload["jti"])
+    raise Auth::InvalidToken.new("Session revoked", code: "session_revoked") if Auth::TokenDenylist.session_revoked?(payload["sid"])
 
     user = User.not_anonymized.find_by(id: payload["sub"])
     raise Auth::InvalidToken if user.nil?
 
-    # Tokens emitidos antes de uma troca de senha deixam de valer.
     if user.password_changed_at && payload["iat"].to_i < user.password_changed_at.to_i
-      raise Auth::InvalidToken, "Sessão expirada após troca de senha"
+      raise Auth::InvalidToken.new("Session expired after a password change", code: "session_expired")
     end
 
     @current_token_payload = payload
@@ -48,7 +46,6 @@ module Authenticatable
     token if scheme&.casecmp?("Bearer")
   end
 
-  # Usado pelo Pundit
   def pundit_user
     current_user
   end

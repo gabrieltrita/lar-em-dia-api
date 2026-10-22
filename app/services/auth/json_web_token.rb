@@ -1,9 +1,4 @@
 module Auth
-  # Encode/decode de JWT assinado com HS256.
-  #
-  # Rotação de segredo: coloque o segredo novo em JWT_SECRET e o antigo em
-  # JWT_SECRET_PREVIOUS. Tokens antigos continuam válidos até expirarem
-  # (no máximo JWT_ACCESS_TTL_MINUTES); depois remova JWT_SECRET_PREVIOUS.
   class JsonWebToken
     ALGORITHM = "HS256".freeze
     ISSUER = "trita-api".freeze
@@ -54,7 +49,7 @@ module Auth
         )
         payload
       rescue JWT::VerificationError
-        nil # assinatura não bate com este segredo: tenta o próximo
+        nil
       rescue JWT::DecodeError
         raise Auth::InvalidToken
       end

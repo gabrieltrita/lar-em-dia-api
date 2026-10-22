@@ -1,6 +1,3 @@
-# Roda todo dia (config/schedule.yml):
-# - apaga refresh tokens expirados (revogados ou não)
-# - apaga cadastros nunca confirmados (evita "reservar" e-mails de terceiros)
 class MaintenanceCleanupJob < ApplicationJob
   queue_as :default
 

@@ -5,7 +5,6 @@ class CreateAuditLogs < ActiveRecord::Migration[8.1]
       t.string :action, null: false
       t.string :target_type
       t.uuid :target_id
-      # metadata nunca deve conter dados pessoais em claro
       t.jsonb :metadata, null: false, default: {}
       t.text :ip_address
       t.text :user_agent

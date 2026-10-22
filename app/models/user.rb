@@ -4,8 +4,6 @@ class User < ApplicationRecord
   PASSWORD_FORMAT = /\A(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+\z/
   EMAIL_FORMAT = URI::MailTo::EMAIL_REGEXP
 
-  # Bloqueio progressivo: a partir da 5ª falha seguida, bloqueia 15 min,
-  # dobrando a cada nova falha (30 min, 1h, ...) até no máximo 24h.
   MAX_FAILED_ATTEMPTS = 5
   BASE_LOCK_DURATION = 15.minutes
   MAX_LOCK_DURATION = 24.hours
@@ -15,17 +13,11 @@ class User < ApplicationRecord
   has_many :refresh_tokens, dependent: :delete_all
   has_many :consents, dependent: :delete_all
 
-  # ===== Criptografia dos dados pessoais =====
-  # e-mail: determinística para permitir busca exata e índice único.
-  # demais campos: não-determinística (mais forte; não é possível buscar por eles no SQL).
   encrypts :email, deterministic: true, downcase: true
   encrypts :first_name, :last_name, :phone, :unconfirmed_email, :otp_secret
 
-  # ===== Roles =====
   enum :role, { user: 0, admin: 1 }, default: :user, validate: true
 
-  # Tokens assinados pelo Rails. O bloco define o que invalida o token:
-  # se o valor mudar, o token deixa de valer (uso único).
   generates_token_for :password_reset, expires_in: 30.minutes do
     password_salt.last(10)
   end
@@ -68,8 +60,6 @@ class User < ApplicationRecord
     anonymized_at.present?
   end
 
-  # ===== Confirmação de e-mail =====
-
   def confirmed?
     confirmed_at.present?
   end
@@ -91,27 +81,21 @@ class User < ApplicationRecord
     save!
   end
 
-  # ===== Sessões =====
-
   def track_sign_in!
     update_columns(last_sign_in_at: Time.current, sign_in_count: sign_in_count + 1)
   end
 
-  # Encerra sessões: revoga os refresh tokens e bloqueia na hora os access
-  # tokens já emitidos para essas sessões (denylist por sessão no Redis).
-  def revoke_all_sessions!(except_family: nil)
+  def revoke_all_sessions!(except_family: nil, reason: "sessions_revoked")
     scope = refresh_tokens.active
     scope = scope.where.not(family_id: except_family) if except_family
     scope.distinct.pluck(:family_id).each { |family_id| Auth::TokenDenylist.revoke_session(family_id) }
-    scope.update_all(revoked_at: Time.current)
+    scope.update_all(revoked_at: Time.current, revoked_reason: reason)
   end
 
-  def revoke_session!(family_id)
+  def revoke_session!(family_id, reason: "session_revoked")
     Auth::TokenDenylist.revoke_session(family_id)
-    refresh_tokens.where(family_id: family_id, revoked_at: nil).update_all(revoked_at: Time.current)
+    refresh_tokens.where(family_id: family_id, revoked_at: nil).update_all(revoked_at: Time.current, revoked_reason: reason)
   end
-
-  # ===== Bloqueio progressivo =====
 
   def access_locked?
     locked_until.present? && locked_until.future?
@@ -136,17 +120,13 @@ class User < ApplicationRecord
   end
   alias_method :unlock!, :reset_failed_logins!
 
-  # ===== LGPD =====
-
-  # Em vez de apagar, remove todos os dados pessoais e mantém só o registro
-  # técnico (id, datas, role) para preservar a integridade da auditoria.
   def anonymize!
     transaction do
-      revoke_all_sessions!
+      revoke_all_sessions!(reason: "anonymized")
       update_columns(
         email: "anon-#{id}@anonymized.invalid",
-        first_name: "Usuário",
-        last_name: "removido",
+        first_name: "Deleted",
+        last_name: "user",
         phone: nil,
         unconfirmed_email: nil,
         otp_secret: nil,
@@ -168,10 +148,8 @@ class User < ApplicationRecord
     self.password_changed_at = Time.current if persisted?
   end
 
-  # Qualquer troca de senha (pelo usuário, por reset ou pelo admin)
-  # derruba todas as sessões existentes e avisa o dono da conta.
   def on_password_changed
-    revoke_all_sessions!
+    revoke_all_sessions!(reason: "password_changed")
     reset_failed_logins!
     AuditLog.record!("user.password_changed", target: self)
     UserMailer.password_changed(self).deliver_later

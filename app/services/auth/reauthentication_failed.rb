@@ -1,5 +1,10 @@
 module Auth
-  # Senha atual / código 2FA incorreto em ação sensível (vira HTTP 422,
-  # não 401, para o front não tentar refresh e deslogar o usuário).
-  class ReauthenticationFailed < StandardError; end
+  class ReauthenticationFailed < StandardError
+    attr_reader :code
+
+    def initialize(message = "Reauthentication failed", code: "reauthentication_failed")
+      super(message)
+      @code = code
+    end
+  end
 end

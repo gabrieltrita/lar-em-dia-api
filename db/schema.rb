@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_000004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -54,6 +54,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_000004) do
     t.datetime "updated_at", null: false
     t.uuid "family_id", default: -> { "gen_random_uuid()" }, null: false
     t.datetime "session_started_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.string "revoked_reason"
     t.index ["expires_at"], name: "index_refresh_tokens_on_expires_at"
     t.index ["family_id"], name: "index_refresh_tokens_on_family_id"
     t.index ["token_digest"], name: "index_refresh_tokens_on_token_digest", unique: true

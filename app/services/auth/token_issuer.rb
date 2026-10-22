@@ -1,6 +1,4 @@
 module Auth
-  # Emite o par access token (JWT, curta duração) + refresh token (opaco, longa duração).
-  # family_id identifica a sessão/dispositivo e se mantém nas rotações.
   class TokenIssuer
     def self.call(user, request: nil, family_id: nil, session_started_at: nil)
       new(user, request, family_id, session_started_at).call

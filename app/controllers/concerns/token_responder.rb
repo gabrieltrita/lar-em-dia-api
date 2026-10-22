@@ -1,10 +1,3 @@
-# Entrega dos tokens ao cliente, em dois modos:
-#
-# - body (padrão; apps mobile e BFF/servidor Node): refresh_token vem no JSON.
-# - cookie (SPA no navegador): envie o header `X-Token-Transport: cookie`.
-#   O refresh token vai num cookie httpOnly + SameSite=Strict que o JavaScript
-#   não consegue ler (um XSS não rouba a sessão). O header customizado força
-#   preflight de CORS, então outros sites não conseguem disparar o refresh (CSRF).
 module TokenResponder
   extend ActiveSupport::Concern
 
@@ -33,7 +26,6 @@ module TokenResponder
     }, status: status
   end
 
-  # Login concluído (após senha e, se houver, 2FA).
   def sign_in_and_render(user, two_factor: false)
     user.reset_failed_logins!
     user.track_sign_in!

@@ -1,25 +1,26 @@
 require "rails_helper"
 
-RSpec.describe "Tokens, sessões e logout", type: :request do
+RSpec.describe "Tokens, sessions and logout", type: :request do
   let(:user) { create(:user) }
 
-  describe "rotas protegidas" do
-    it "exige token" do
+  describe "protected routes" do
+    it "requires a token" do
       get "/api/v1/me"
       expect(response).to have_http_status(:unauthorized)
+      expect(json.dig("error", "code")).to eq("missing_token")
     end
 
-    it "rejeita token inválido" do
+    it "rejects an invalid token" do
       get "/api/v1/me", headers: bearer("abc.def.ghi")
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "rejeita refresh token usado como access token" do
+    it "rejects a refresh token used as an access token" do
       get "/api/v1/me", headers: bearer(tokens_for(user)[:refresh_token])
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "rejeita token expirado" do
+    it "rejects an expired token" do
       headers = auth_headers(user)
       travel 16.minutes do
         get "/api/v1/me", headers: headers
@@ -27,13 +28,13 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
       end
     end
 
-    it "rejeita token assinado com outro segredo" do
+    it "rejects a token signed with another secret" do
       forged = JWT.encode({ sub: user.id, type: "access", iss: "trita-api", exp: 1.hour.from_now.to_i, iat: Time.current.to_i, jti: "x" }, "outro-segredo", "HS256")
       get "/api/v1/me", headers: bearer(forged)
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "aceita tokens do segredo anterior durante a rotação (JWT_SECRET_PREVIOUS)" do
+    it "accepts tokens signed with the previous secret during rotation (JWT_SECRET_PREVIOUS)" do
       old_secret = ENV.fetch("JWT_SECRET")
       token = tokens_for(user)[:access_token]
 
@@ -50,7 +51,7 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
   end
 
   describe "POST /api/v1/auth/refresh" do
-    it "rotaciona o refresh token mantendo a mesma sessão" do
+    it "rotates the refresh token within the same session" do
       old = tokens_for(user)[:refresh_token]
       family = RefreshToken.find_by_raw_token(old).family_id
 
@@ -61,13 +62,14 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
       expect(RefreshToken.find_by_raw_token(new_token).family_id).to eq(family)
     end
 
-    it "detecta reuso e derruba todas as sessões (inclusive access tokens)" do
+    it "detects reuse and revokes every session, access tokens included" do
       tokens = tokens_for(user)
       post "/api/v1/auth/refresh", params: { refresh_token: tokens[:refresh_token] }, as: :json
       new_tokens = json.dig("data", "tokens")
 
       post "/api/v1/auth/refresh", params: { refresh_token: tokens[:refresh_token] }, as: :json
       expect(response).to have_http_status(:unauthorized)
+      expect(json.dig("error", "code")).to eq("refresh_token_reused")
 
       post "/api/v1/auth/refresh", params: { refresh_token: new_tokens["refresh_token"] }, as: :json
       expect(response).to have_http_status(:unauthorized)
@@ -77,7 +79,20 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
       expect(AuditLog.where(action: "auth.refresh_reuse_detected")).to exist
     end
 
-    it "refresh token antigo não vale depois que o ADMIN troca a senha do usuário" do
+    it "does not revoke the new session when an old device refreshes after a password change" do
+      old_device = tokens_for(user)
+      user.update!(password: "Nova@12345")
+      new_session = tokens_for(user)
+
+      post "/api/v1/auth/refresh", params: { refresh_token: old_device[:refresh_token] }, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      expect(AuditLog.where(action: "auth.refresh_reuse_detected")).not_to exist
+
+      post "/api/v1/auth/refresh", params: { refresh_token: new_session[:refresh_token] }, as: :json
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "invalidates old refresh tokens after an ADMIN changes the user's password" do
       admin = create(:user, :admin)
       tokens = tokens_for(user)
 
@@ -89,10 +104,10 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
     end
   end
 
-  describe "modo cookie (X-Token-Transport: cookie)" do
+  describe "cookie mode (X-Token-Transport: cookie)" do
     let(:cookie_header) { { "X-Token-Transport" => "cookie" } }
 
-    it "entrega o refresh token só em cookie httpOnly e faz refresh pelo cookie" do
+    it "delivers the refresh token only in an httpOnly cookie and refreshes from it" do
       login(user.email, "Senha@123", headers: cookie_header)
 
       expect(response).to have_http_status(:ok)
@@ -107,7 +122,7 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
       expect(response).to have_http_status(:ok)
     end
 
-    it "sem o header customizado o cookie é ignorado (proteção CSRF)" do
+    it "ignores the cookie without the custom header (CSRF protection)" do
       login(user.email, "Senha@123", headers: cookie_header)
       post "/api/v1/auth/refresh", as: :json
       expect(response).to have_http_status(:bad_request)
@@ -115,7 +130,7 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
   end
 
   describe "DELETE /api/v1/auth/logout" do
-    it "encerra a sessão atual na hora (access e refresh)" do
+    it "ends the current session immediately (access and refresh)" do
       tokens = tokens_for(user)
 
       delete "/api/v1/auth/logout", headers: bearer(tokens[:access_token]), as: :json
@@ -123,12 +138,13 @@ RSpec.describe "Tokens, sessões e logout", type: :request do
 
       get "/api/v1/me", headers: bearer(tokens[:access_token])
       expect(response).to have_http_status(:unauthorized)
+      expect(json.dig("error", "code")).to eq("token_revoked")
 
       post "/api/v1/auth/refresh", params: { refresh_token: tokens[:refresh_token] }, as: :json
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "all_devices encerra as outras sessões também" do
+    it "all_devices also ends the other sessions" do
       other = tokens_for(user)
       delete "/api/v1/auth/logout", params: { all_devices: true }, headers: auth_headers(user), as: :json
 

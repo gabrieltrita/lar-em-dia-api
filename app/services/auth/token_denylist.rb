@@ -1,8 +1,4 @@
 module Auth
-  # Revogação imediata de access tokens (que são stateless) via Redis:
-  # - por token (jti): logout, desafio 2FA já usado
-  # - por sessão (sid): "encerrar este dispositivo", troca de senha, reuso de refresh token
-  # As chaves expiram sozinhas quando o token deixaria de valer de qualquer forma.
   class TokenDenylist
     TOKEN_PREFIX = "auth:jwt:denylist".freeze
     SESSION_PREFIX = "auth:session:revoked".freeze

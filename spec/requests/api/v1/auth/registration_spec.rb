@@ -1,15 +1,15 @@
 require "rails_helper"
 
-RSpec.describe "Cadastro e confirmação de e-mail", type: :request do
+RSpec.describe "Registration and email confirmation", type: :request do
   let(:params) do
     {
       email: "novo@example.com", password: "Senha@123", password_confirmation: "Senha@123",
-      first_name: "Novo", last_name: "User", accept_terms: true, accept_privacy: true
+      first_name: "New", last_name: "User", accept_terms: true, accept_privacy: true
     }
   end
 
   describe "POST /api/v1/auth/register" do
-    it "cria conta não confirmada com role user, registra consentimentos e envia confirmação" do
+    it "creates an unconfirmed user account, records consents and sends the confirmation" do
       expect {
         post "/api/v1/auth/register", params: params.merge(role: "admin"), as: :json
       }.to change(User, :count).by(1).and have_enqueued_mail(UserMailer, :confirmation_instructions)
@@ -23,14 +23,15 @@ RSpec.describe "Cadastro e confirmação de e-mail", type: :request do
       expect(Consent.status_for(user).transform_values { |v| v[:granted] }).to eq("terms" => true, "privacy" => true, "marketing" => false)
     end
 
-    it "exige aceite dos termos e da privacidade" do
+    it "requires accepting the terms and the privacy policy" do
       post "/api/v1/auth/register", params: params.except(:accept_terms, :accept_privacy), as: :json
       expect(response).to have_http_status(:unprocessable_content)
       expect(json.dig("error", "details").keys).to include("accept_terms", "accept_privacy")
+      expect(json.dig("error", "details", "accept_terms", 0, "code")).to eq("required")
     end
 
-    context "anti-enumeração" do
-      it "e-mail já confirmado: mesma resposta 202 e o dono recebe aviso" do
+    context "email enumeration protection" do
+      it "existing confirmed email: same 202 response and the owner gets a notice" do
         create(:user, email: "novo@example.com")
 
         expect {
@@ -40,7 +41,7 @@ RSpec.describe "Cadastro e confirmação de e-mail", type: :request do
         expect(response).to have_http_status(:accepted)
       end
 
-      it "e-mail cadastrado mas não confirmado: reenvia a confirmação" do
+      it "existing unconfirmed email: resends the confirmation" do
         create(:user, :unconfirmed, email: "novo@example.com")
 
         expect {
@@ -49,12 +50,13 @@ RSpec.describe "Cadastro e confirmação de e-mail", type: :request do
         expect(response).to have_http_status(:accepted)
       end
 
-      it "não revela 'e-mail já em uso' nos erros de validação" do
+      it "does not leak 'email already taken' in validation errors" do
         create(:user, email: "novo@example.com")
         post "/api/v1/auth/register", params: params.merge(password: "fraca", password_confirmation: "fraca"), as: :json
 
         expect(response).to have_http_status(:unprocessable_content)
         expect(json.dig("error", "details")).not_to have_key("email")
+        expect(json.dig("error", "details", "password").map { |e| e["code"] }).to include("too_short", "weak_password")
       end
     end
   end
@@ -62,7 +64,7 @@ RSpec.describe "Cadastro e confirmação de e-mail", type: :request do
   describe "POST /api/v1/auth/confirm" do
     let(:user) { create(:user, :unconfirmed) }
 
-    it "confirma, envia boas-vindas e já devolve a sessão" do
+    it "confirms, sends the welcome email and signs in" do
       token = user.generate_token_for(:email_confirmation)
 
       expect {
@@ -77,14 +79,14 @@ RSpec.describe "Cadastro e confirmação de e-mail", type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "rejeita token inválido" do
+    it "rejects an invalid token" do
       post "/api/v1/auth/confirm", params: { token: "lixo" }, as: :json
       expect(response).to have_http_status(:unauthorized)
     end
   end
 
   describe "POST /api/v1/auth/confirm/resend" do
-    it "responde 202 sempre e só envia para conta pendente" do
+    it "always answers 202 and only sends to pending accounts" do
       create(:user, :unconfirmed, email: "pendente@example.com")
       create(:user, email: "ok@example.com")
 

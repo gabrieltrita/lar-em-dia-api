@@ -1,8 +1,6 @@
 module Api
   module V1
     module Auth
-      # POST /api/v1/auth/refresh
-      # Body { refresh_token } ou, no modo cookie, header `X-Token-Transport: cookie`.
       class TokensController < ApplicationController
         skip_before_action :authenticate_user!
 

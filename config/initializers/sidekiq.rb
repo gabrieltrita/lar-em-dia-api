@@ -8,7 +8,6 @@ Sidekiq.configure_client do |config|
   config.redis = redis_config
 end
 
-# Carrega os jobs agendados de config/schedule.yml ao subir o Sidekiq.
 Sidekiq::Cron.configure do |config|
   config.cron_schedule_file = "config/schedule.yml"
 end

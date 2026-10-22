@@ -1,15 +1,11 @@
 module Api
   module V1
     module Me
-      # Consentimentos LGPD (termos, privacidade, marketing).
       class ConsentsController < ApplicationController
-        # GET /api/v1/me/consents
         def index
           render json: { data: Consent.status_for(current_user) }
         end
 
-        # POST /api/v1/me/consents  { kind, granted }
-        # Também usado para aceitar uma NOVA versão dos termos.
         def create
           kind = params.require(:kind).to_s
           raise ActiveRecord::RecordNotFound unless Consent::KINDS.key?(kind)
@@ -17,7 +13,7 @@ module Api
           granted = truthy?(params.require(:granted))
           if !granted && Consent.required_kinds.include?(kind)
             return render_error(status: :unprocessable_content, code: "consent_required",
-                                message: "Este consentimento é obrigatório para usar o serviço. Para encerrar a conta use DELETE /me.")
+                                message: "This consent is required to use the service. To close the account use DELETE /me.")
           end
 
           Consent.record!(current_user, kind, granted)

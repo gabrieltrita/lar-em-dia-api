@@ -1,7 +1,6 @@
 module Api
   module V1
     module Admin
-      # GET /api/v1/admin/audit_logs?action_name=auth.login&actor_id=...&target_id=...&from=2026-10-01&to=2026-10-31
       class AuditLogsController < BaseController
         def index
           authorize AuditLog

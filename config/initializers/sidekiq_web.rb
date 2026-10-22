@@ -1,7 +1,6 @@
 require "sidekiq/web"
 require "rack/session"
 
-# A API é stateless; a sessão por cookie existe só dentro do painel do Sidekiq.
 Sidekiq::Web.use Rack::Session::Cookie,
   secret: Rails.application.secret_key_base,
   same_site: true,

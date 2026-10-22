@@ -1,4 +1,6 @@
 class RefreshToken < ApplicationRecord
+  ROTATED = "rotated".freeze
+
   belongs_to :user
 
   encrypts :user_agent, :ip_address
@@ -15,7 +17,6 @@ class RefreshToken < ApplicationRecord
     find_by(token_digest: digest(raw_token))
   end
 
-  # Uma linha por sessão (dispositivo), com a atividade mais recente.
   def self.sessions_for(user)
     user.refresh_tokens.active
       .select("DISTINCT ON (family_id) *")
@@ -31,7 +32,11 @@ class RefreshToken < ApplicationRecord
     expires_at <= Time.current
   end
 
-  def revoke!
-    update!(revoked_at: Time.current) unless revoked?
+  def rotated?
+    revoked_reason == ROTATED
+  end
+
+  def revoke!(reason:)
+    update!(revoked_at: Time.current, revoked_reason: reason) unless revoked?
   end
 end

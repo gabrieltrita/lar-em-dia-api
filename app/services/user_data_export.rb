@@ -1,4 +1,3 @@
-# Monta a exportação completa dos dados de um usuário (LGPD, portabilidade).
 class UserDataExport
   def initialize(user)
     @user = user

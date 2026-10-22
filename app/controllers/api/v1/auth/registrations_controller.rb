@@ -1,14 +1,6 @@
 module Api
   module V1
     module Auth
-      # POST /api/v1/auth/register
-      #
-      # Anti-enumeração: a resposta é SEMPRE a mesma (202) quando os dados são
-      # válidos, exista ou não uma conta com o e-mail. O dono do e-mail é quem
-      # recebe a informação, por e-mail:
-      # - conta nova: link de confirmação
-      # - conta existente não confirmada: novo link de confirmação
-      # - conta existente confirmada: aviso de tentativa de cadastro
       class RegistrationsController < ApplicationController
         skip_before_action :authenticate_user!
 
@@ -16,20 +8,21 @@ module Api
           user = User.new(registration_params)
           user.valid?
 
-          details = user.errors.reject { |e| e.attribute == :email && e.type == :taken }
-                        .group_by(&:attribute).transform_values { |errs| errs.map(&:full_message) }
+          details = validation_details(user.errors.reject { |e| e.attribute == :email && e.type == :taken })
           Consent.required_kinds.each do |kind|
-            details[:"accept_#{kind}"] = [ I18n.t("consents.required", kind: I18n.t("consents.kinds.#{kind}")) ] unless truthy?(params[:"accept_#{kind}"])
+            next if truthy?(params[:"accept_#{kind}"])
+
+            details[:"accept_#{kind}"] = [ { code: "required", message: I18n.t("consents.required", kind: I18n.t("consents.kinds.#{kind}")) } ]
           end
 
           if details.any?
-            return render_error(status: :unprocessable_content, code: "validation_failed", message: "Dados inválidos", details: details)
+            return render_error(status: :unprocessable_content, code: "validation_failed", message: "Invalid data", details: details)
           end
 
           existing = User.find_by(email: user.email)
           existing ? notify_existing(existing) : create_account(user)
 
-          render json: { data: { message: "Cadastro recebido! Enviamos um e-mail para concluir. Verifique sua caixa de entrada." } }, status: :accepted
+          render json: { data: { message: "Registration received. Check your inbox to finish signing up." } }, status: :accepted
         end
 
         private
@@ -43,7 +36,6 @@ module Api
           AuditLog.record!("user.registered", target: user, actor: user)
           UserMailer.confirmation_instructions(user).deliver_later
         rescue ActiveRecord::RecordNotUnique
-          # Corrida: outro cadastro com o mesmo e-mail entrou no meio.
           existing = User.find_by(email: user.email)
           notify_existing(existing) if existing
         end

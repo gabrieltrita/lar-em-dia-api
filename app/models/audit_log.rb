@@ -1,4 +1,3 @@
-# Trilha de auditoria imutável. Nunca guarde dados pessoais em `metadata`.
 class AuditLog < ApplicationRecord
   ACTIONS = %w[
     auth.login auth.login_failed auth.login_blocked auth.locked auth.logout
@@ -36,8 +35,7 @@ class AuditLog < ApplicationRecord
       request_id: Current.request_id
     )
   rescue => e
-    # Auditoria nunca pode derrubar o fluxo principal, mas a falha precisa aparecer.
-    Rails.logger.error("[AuditLog] falha ao registrar #{action}: #{e.class} #{e.message}")
+    Rails.logger.error("[AuditLog] failed to record #{action}: #{e.class} #{e.message}")
     Sentry.capture_exception(e) if defined?(Sentry) && Sentry.initialized?
     nil
   end

@@ -1,6 +1,4 @@
 module Trita
-  # Valida as variáveis de ambiente obrigatórias em produção.
-  # Usado por config/initializers/00_required_env.rb.
   class EnvValidator
     REQUIRED = %w[
       DATABASE_URL REDIS_URL SIDEKIQ_REDIS_URL
@@ -17,7 +15,7 @@ module Trita
 
     def self.validate!(env = ENV)
       errors = new(env).errors
-      raise "Configuração de produção inválida:\n  - #{errors.join("\n  - ")}" if errors.any?
+      raise "Invalid production configuration:\n  - #{errors.join("\n  - ")}" if errors.any?
     end
 
     def initialize(env)
@@ -25,27 +23,27 @@ module Trita
     end
 
     def errors
-      errors = REQUIRED.select { |key| blank?(key) }.map { |key| "#{key} não definida" }
+      errors = REQUIRED.select { |key| blank?(key) }.map { |key| "#{key} is not set" }
 
       if present?("JWT_SECRET") && @env["JWT_SECRET"].length < MIN_JWT_SECRET
-        errors << "JWT_SECRET precisa ter pelo menos #{MIN_JWT_SECRET} caracteres"
+        errors << "JWT_SECRET must be at least #{MIN_JWT_SECRET} characters"
       end
 
       ENCRYPTION_KEYS.each do |key|
         next if blank?(key)
 
         if @env[key].split(",").any? { |k| k.strip.length < MIN_ENCRYPTION_KEY }
-          errors << "#{key} precisa ter pelo menos #{MIN_ENCRYPTION_KEY} caracteres"
+          errors << "#{key} must be at least #{MIN_ENCRYPTION_KEY} characters"
         end
       end
 
       if present?("SIDEKIQ_WEB_PASSWORD") && @env["SIDEKIQ_WEB_PASSWORD"].length < MIN_SIDEKIQ_PASSWORD
-        errors << "SIDEKIQ_WEB_PASSWORD precisa ter pelo menos #{MIN_SIDEKIQ_PASSWORD} caracteres"
+        errors << "SIDEKIQ_WEB_PASSWORD must be at least #{MIN_SIDEKIQ_PASSWORD} characters"
       end
 
       origins = @env["CORS_ORIGINS"].to_s.split(",").map(&:strip)
-      errors << "CORS_ORIGINS não pode conter *" if origins.include?("*")
-      errors << "CORS_ORIGINS deve usar https em produção" if origins.any? { |o| !o.start_with?("https://") }
+      errors << "CORS_ORIGINS must not contain *" if origins.include?("*")
+      errors << "CORS_ORIGINS must use https in production" if origins.any? { |o| !o.start_with?("https://") }
 
       errors
     end

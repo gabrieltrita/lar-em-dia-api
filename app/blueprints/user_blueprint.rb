@@ -6,7 +6,6 @@ class UserBlueprint < Blueprinter::Base
   field(:email_confirmed) { |user, _| user.confirmed? }
   field(:two_factor_enabled) { |user, _| user.two_factor_enabled? }
 
-  # Visão do próprio usuário (GET /me)
   view :self do
     field :unconfirmed_email, name: :pending_email
   end

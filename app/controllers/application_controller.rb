@@ -6,7 +6,6 @@ class ApplicationController < ActionController::API
   include Authenticatable
   include TokenResponder
 
-  # O front envia JSON "plano" (sem envelopar em { user: {...} }).
   wrap_parameters false
 
   prepend_before_action :set_current_request
@@ -23,17 +22,16 @@ class ApplicationController < ActionController::API
     ActiveModel::Type::Boolean.new.cast(value) == true
   end
 
-  # Confirmação de identidade para ações sensíveis.
   def require_current_password!
     return if current_user.authenticate(params.require(:current_password).to_s)
 
-    raise Auth::ReauthenticationFailed, "Senha atual incorreta"
+    raise Auth::ReauthenticationFailed.new("Current password is incorrect", code: "invalid_current_password")
   end
 
   def require_second_factor!
     return unless current_user.two_factor_enabled?
     return if current_user.verify_second_factor(params[:code])
 
-    raise Auth::ReauthenticationFailed, "Código de verificação inválido"
+    raise Auth::ReauthenticationFailed.new("Invalid verification code", code: "invalid_two_factor_code")
   end
 end

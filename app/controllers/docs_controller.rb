@@ -1,11 +1,10 @@
-# Swagger UI para docs/openapi.yaml (desligado em produção, ver routes.rb).
 class DocsController < ActionController::API
   SWAGGER_UI_VERSION = "5.17.14".freeze
 
   def index
     render html: <<~HTML.html_safe, layout: false
       <!doctype html>
-      <html lang="pt-BR">
+      <html lang="en">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">

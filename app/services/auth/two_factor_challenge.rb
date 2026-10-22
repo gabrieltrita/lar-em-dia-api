@@ -1,6 +1,4 @@
 module Auth
-  # Token de curta duração entregue no login quando o usuário tem 2FA.
-  # Só serve para o passo POST /auth/two_factor e é de uso único.
   class TwoFactorChallenge
     TTL = 5.minutes
     TYPE = "2fa_challenge".freeze
@@ -12,7 +10,7 @@ module Auth
 
       def verify(token)
         payload = JsonWebToken.decode(token.to_s, type: TYPE)
-        raise InvalidToken, "Desafio 2FA expirado. Faça login novamente." if TokenDenylist.include?(payload["jti"])
+        raise InvalidToken.new("2FA challenge expired. Please log in again.", code: "two_factor_challenge_expired") if TokenDenylist.include?(payload["jti"])
 
         user = User.not_anonymized.find_by(id: payload["sub"])
         raise InvalidToken if user.nil? || user.access_locked?

@@ -4,9 +4,6 @@ module Api
       class UsersController < BaseController
         before_action :set_user, only: %i[show update destroy unlock reset_two_factor]
 
-        # GET /api/v1/admin/users?page=1&limit=20&role=admin&email=foo@bar.com
-        # Obs.: nome/telefone são criptografados de forma não-determinística,
-        # por isso não dá para filtrar por eles no banco. E-mail aceita busca exata.
         def index
           authorize User
           scope = policy_scope(User).not_anonymized.order(created_at: :desc)
@@ -17,14 +14,11 @@ module Api
           render json: { data: UserBlueprint.render_as_hash(users, view: :admin), meta: pagination_meta(pagy) }
         end
 
-        # GET /api/v1/admin/users/:id
         def show
           authorize @user
           render json: { data: UserBlueprint.render_as_hash(@user, view: :admin) }
         end
 
-        # POST /api/v1/admin/users
-        # Usuário criado pelo admin já nasce com e-mail confirmado.
         def create
           user = User.new(user_params.merge(confirmed_at: Time.current))
           authorize user
@@ -37,9 +31,6 @@ module Api
           end
         end
 
-        # PATCH /api/v1/admin/users/:id
-        # Troca de role e de senha são auditadas pelo model; troca de senha
-        # derruba todas as sessões do usuário.
         def update
           authorize @user
           attrs = user_params
@@ -54,7 +45,6 @@ module Api
           end
         end
 
-        # DELETE /api/v1/admin/users/:id  -> anonimiza (LGPD), não apaga.
         def destroy
           authorize @user
           @user.anonymize!
@@ -62,7 +52,6 @@ module Api
           head :no_content
         end
 
-        # POST /api/v1/admin/users/:id/unlock
         def unlock
           authorize @user
           @user.unlock!
@@ -70,8 +59,6 @@ module Api
           render json: { data: UserBlueprint.render_as_hash(@user, view: :admin) }
         end
 
-        # DELETE /api/v1/admin/users/:id/two_factor
-        # Para quem perdeu o celular e os códigos de backup.
         def reset_two_factor
           authorize @user
           @user.disable_two_factor!

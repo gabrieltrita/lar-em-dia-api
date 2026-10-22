@@ -1,5 +1,3 @@
-# Registro histórico (LGPD) de aceite/revogação de termos. Nunca é editado:
-# cada mudança gera uma nova linha; o estado atual é a linha mais recente por tipo.
 class Consent < ApplicationRecord
   KINDS = {
     "terms" => { required: true },
@@ -37,7 +35,6 @@ class Consent < ApplicationRecord
     )
   end
 
-  # Estado atual por tipo: { "terms" => { granted:, version:, at: }, ... }
   def self.status_for(user)
     latest = user.consents.select("DISTINCT ON (kind) *").order(:kind, created_at: :desc)
     KINDS.keys.index_with do |kind|

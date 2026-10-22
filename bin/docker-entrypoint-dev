@@ -1,12 +1,9 @@
 #!/bin/bash -e
 
-# Instala gems novas se o Gemfile mudou (volume de bundle persiste entre builds)
 bundle check > /dev/null 2>&1 || bundle install
 
-# Remove pid antigo que impede o Puma de subir
 rm -f /rails/tmp/pids/server.pid
 
-# Só o container da API prepara o banco (sidekiq não precisa)
 if [[ "$*" == *"rails server"* ]]; then
   ./bin/rails db:prepare
 fi

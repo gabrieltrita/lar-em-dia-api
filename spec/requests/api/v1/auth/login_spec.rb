@@ -1,11 +1,11 @@
 require "rails_helper"
 
-RSpec.describe "Login, bloqueio e 2FA", type: :request do
+RSpec.describe "Login, lockout and 2FA", type: :request do
   let(:password) { "Senha@123" }
   let!(:user) { create(:user, email: "login@example.com", password: password) }
 
   describe "POST /api/v1/auth/login" do
-    it "autentica com credenciais válidas" do
+    it "authenticates with valid credentials" do
       login("LOGIN@example.com", password)
       expect(response).to have_http_status(:ok)
       expect(json.dig("data", "tokens", "token_type")).to eq("Bearer")
@@ -13,7 +13,7 @@ RSpec.describe "Login, bloqueio e 2FA", type: :request do
       expect(AuditLog.where(action: "auth.login", target_id: user.id)).to exist
     end
 
-    it "rejeita senha errada e e-mail inexistente com a mesma resposta" do
+    it "answers a wrong password and an unknown email identically" do
       login("login@example.com", "Errada@123")
       wrong_password = [ response.status, json ]
       login("nao@existe.com", password)
@@ -22,7 +22,7 @@ RSpec.describe "Login, bloqueio e 2FA", type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "exige e-mail confirmado (só depois de acertar a senha)" do
+    it "requires a confirmed email (only after the right password)" do
       create(:user, :unconfirmed, email: "pendente@example.com", password: password)
 
       login("pendente@example.com", "Errada@123")
@@ -34,14 +34,14 @@ RSpec.describe "Login, bloqueio e 2FA", type: :request do
     end
   end
 
-  describe "bloqueio progressivo" do
-    it "após 5 erros bloqueia — até a senha certa é recusada — com a mesma mensagem" do
+  describe "progressive lockout" do
+    it "locks after 5 failures, rejecting even the right password with the same message" do
       5.times { login("login@example.com", "Errada@123") }
       expect(user.reload).to be_access_locked
 
       login("login@example.com", password)
       expect(response).to have_http_status(:unauthorized)
-      expect(json.dig("error", "message")).to eq("E-mail ou senha inválidos")
+      expect(json.dig("error", "code")).to eq("invalid_credentials")
 
       travel 16.minutes do
         login("login@example.com", password)
@@ -54,7 +54,7 @@ RSpec.describe "Login, bloqueio e 2FA", type: :request do
   describe "2FA" do
     let!(:user) { create(:user, :with_2fa, email: "dois@example.com", password: password) }
 
-    it "pede o segundo fator e só emite tokens com código válido" do
+    it "asks for the second factor and only issues tokens with a valid code" do
       login("dois@example.com", password)
       expect(json.dig("data", "two_factor_required")).to be(true)
       expect(json.dig("data", "tokens")).to be_nil
@@ -67,20 +67,19 @@ RSpec.describe "Login, bloqueio e 2FA", type: :request do
       expect(response).to have_http_status(:ok)
       expect(json.dig("data", "tokens", "access_token")).to be_present
 
-      # desafio é de uso único
       travel 31.seconds do
         post "/api/v1/auth/two_factor", params: { challenge_token: challenge, code: otp_code(user) }, as: :json
         expect(response).to have_http_status(:unauthorized)
       end
     end
 
-    it "challenge_token não funciona como access token" do
+    it "does not accept the challenge_token as an access token" do
       login("dois@example.com", password)
       get "/api/v1/me", headers: bearer(json.dig("data", "challenge_token"))
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "códigos errados contam para o bloqueio" do
+    it "counts wrong codes towards the lockout" do
       login("dois@example.com", password)
       challenge = json.dig("data", "challenge_token")
       5.times { post "/api/v1/auth/two_factor", params: { challenge_token: challenge, code: "123456" }, as: :json }
@@ -88,7 +87,7 @@ RSpec.describe "Login, bloqueio e 2FA", type: :request do
       expect(user.reload).to be_access_locked
     end
 
-    it "aceita código de backup" do
+    it "accepts a backup code" do
       codes = user.regenerate_backup_codes!
       login("dois@example.com", password)
       post "/api/v1/auth/two_factor", params: { challenge_token: json.dig("data", "challenge_token"), code: codes.first }, as: :json

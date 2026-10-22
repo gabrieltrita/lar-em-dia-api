@@ -1,6 +1,3 @@
-# CORS liberado apenas para as origens do front (trita-web).
-# Configure via CORS_ORIGINS="http://localhost:5173,https://app.trita.dev"
-# credentials: true é necessário para o modo cookie do refresh token.
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
     origins(*ENV.fetch("CORS_ORIGINS", "http://localhost:5173").split(",").map(&:strip))

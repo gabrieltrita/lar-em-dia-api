@@ -1,5 +1,3 @@
-# Monitoramento de erros. Só liga se SENTRY_DSN estiver definido.
-# Nenhum dado pessoal é enviado: só o id do usuário.
 if ENV["SENTRY_DSN"].present?
   Sentry.init do |config|
     config.dsn = ENV["SENTRY_DSN"]
@@ -18,7 +16,6 @@ if ENV["SENTRY_DSN"].present?
         event.request.data = "[FILTERED]" if event.request.data.present?
         event.request.cookies = {}
         event.request.headers&.reject! { |k, _| sensitive_headers.any? { |h| h.casecmp?(k) } }
-        # Query string pode ter token de reset/confirmação
         event.request.query_string = "[FILTERED]" if event.request.query_string.present?
       end
 

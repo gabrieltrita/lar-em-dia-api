@@ -17,7 +17,6 @@ FactoryBot.define do
       otp_enabled_at { Time.current }
     end
 
-    # Admin "pronto para uso": já com 2FA (obrigatório na área admin)
     trait :admin do
       role { :admin }
       with_2fa

@@ -1,9 +1,7 @@
 module Api
   module V1
     module Me
-      # Sessões ativas (dispositivos) do usuário.
       class SessionsController < ApplicationController
-        # GET /api/v1/me/sessions
         def index
           sessions = RefreshToken.sessions_for(current_user).map do |token|
             {
@@ -18,7 +16,6 @@ module Api
           render json: { data: sessions }
         end
 
-        # DELETE /api/v1/me/sessions/:id   (id = id da sessão)
         def destroy
           raise ActiveRecord::RecordNotFound unless current_user.refresh_tokens.active.exists?(family_id: params[:id])
 

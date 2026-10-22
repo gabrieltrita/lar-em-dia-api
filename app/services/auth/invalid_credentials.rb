@@ -1,6 +1,6 @@
 module Auth
   class InvalidCredentials < Unauthorized
-    def initialize(message = "E-mail ou senha inválidos")
+    def initialize(message = "Invalid email or password", code: "invalid_credentials")
       super
     end
   end

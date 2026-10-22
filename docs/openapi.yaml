@@ -1,0 +1,835 @@
+openapi: 3.1.0
+info:
+  title: trita-api
+  version: 1.0.0
+  description: |
+    Base API for the Trita apps.
+
+    **Authentication:** send `Authorization: Bearer <access_token>`. Access tokens last 15 minutes;
+    call `POST /auth/refresh` to renew. On a 401, refresh once and retry the request.
+
+    **Cookie mode (browser SPA):** send the `X-Token-Transport: cookie` header on login, refresh and confirmation.
+    The refresh token is then delivered only in an httpOnly cookie (`trita_refresh`) and omitted from the JSON. Use `credentials: "include"` with fetch.
+
+    **Format:** success `{ "data": ..., "meta": ... }` · error `{ "error": { "code", "message", "details" } }`.
+
+    **Translating errors:** messages are in English. Clients must translate using the stable `error.code`
+    (and `details[field][].code` for validation errors), never by matching the message text.
+
+    | code | status | meaning |
+    |---|---|---|
+    | `validation_failed` | 422 | Invalid payload, see `details` |
+    | `bad_request` | 400 | Missing parameter or malformed JSON |
+    | `missing_token` | 401 | No `Authorization` header |
+    | `invalid_token` | 401 | Invalid, expired or wrong-type token |
+    | `token_revoked` | 401 | Access token revoked by logout |
+    | `session_revoked` | 401 | Session ended (device removed, all sessions revoked) |
+    | `session_expired` | 401 | Token issued before a password change |
+    | `refresh_token_reused` | 401 | Rotated refresh token reused; every session revoked |
+    | `invalid_credentials` | 401 | Wrong email or password, or locked account |
+    | `invalid_two_factor_code` | 401/422 | Wrong TOTP or backup code |
+    | `two_factor_challenge_expired` | 401 | Login 2FA challenge already used or expired |
+    | `invalid_confirmation_token` | 401 | Bad or expired email confirmation link |
+    | `invalid_email_change_token` | 401 | Bad or expired email change link |
+    | `invalid_reset_token` | 401 | Bad or expired password reset link |
+    | `email_not_confirmed` | 403 | Correct password but email not confirmed yet |
+    | `forbidden` | 403 | Not allowed |
+    | `two_factor_setup_required` | 403 | Admin must enable 2FA first |
+    | `two_factor_required` | 403 | Admins cannot disable 2FA |
+    | `not_found` | 404 | Resource not found |
+    | `invalid_current_password` | 422 | Wrong current password on a sensitive action |
+    | `two_factor_already_enabled` | 422 | 2FA is already enabled |
+    | `two_factor_not_enabled` | 422 | 2FA is not enabled |
+    | `consent_required` | 422 | Required consent cannot be revoked |
+    | `rate_limited` | 429 | Too many requests, see `Retry-After` |
+    | `internal_error` | 500 | Unexpected error |
+
+    Validation `details` codes include Rails defaults (`blank`, `invalid`, `too_short`, `too_long`, `confirmation`, `inclusion`)
+    plus `weak_password`, `required` and `same_as_current`.
+servers:
+  - url: /api/v1
+tags:
+  - name: Auth
+  - name: Me
+  - name: Admin
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Sign up (always 202 when the payload is valid)
+      description: Never reveals whether the email exists. The email owner receives either a confirmation link or a sign-up attempt notice.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, accept_terms, accept_privacy]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 72, description: Uppercase, lowercase and a digit }
+                password_confirmation: { type: string }
+                first_name: { type: string }
+                last_name: { type: string }
+                phone: { type: string }
+                accept_terms: { type: boolean }
+                accept_privacy: { type: boolean }
+                accept_marketing: { type: boolean }
+      responses:
+        "202": { $ref: "#/components/responses/Message" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      description: |
+        When the user has 2FA, the response carries `two_factor_required: true` and a `challenge_token`; finish with `POST /auth/two_factor`.
+        A locked account responds exactly like a wrong password (401). An unconfirmed email responds 403 `email_not_confirmed` (only with the right password).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Session created or 2FA pending
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/SessionResponse"
+                  - $ref: "#/components/schemas/TwoFactorChallengeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /auth/two_factor:
+    post:
+      tags: [Auth]
+      summary: Second login step (TOTP or backup code)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_token, code]
+              properties:
+                challenge_token: { type: string }
+                code: { type: string, description: 6-digit authenticator code or a backup code }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange the refresh token for a new pair (rotation)
+      description: Reusing an already rotated refresh token revokes every session of the user.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string, description: Optional in cookie mode }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /auth/logout:
+    delete:
+      tags: [Auth]
+      summary: End the current session (or all of them)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                all_devices: { type: boolean }
+      responses:
+        "204": { description: Session ended }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /auth/confirm:
+    post:
+      tags: [Auth]
+      summary: Confirm the email and sign in
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /auth/confirm/resend:
+    post:
+      tags: [Auth]
+      summary: Resend the confirmation link (always 202)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Message" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /auth/email/confirm:
+    post:
+      tags: [Auth]
+      summary: Finish an email change (link sent to the new address)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /auth/password/forgot:
+    post:
+      tags: [Auth]
+      summary: Send the password reset link (always 202)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Message" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /auth/password/reset:
+    post:
+      tags: [Auth]
+      summary: Reset the password with the emailed token
+      description: Revokes every session, unlocks the account and confirms the email.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+                password_confirmation: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /me:
+    get:
+      tags: [Me]
+      summary: Current user profile
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [Me]
+      summary: Update name and phone (email has its own flow)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name: { type: string }
+                last_name: { type: string }
+                phone: { type: string }
+      responses:
+        "200": { description: Profile updated }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Me]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Profile updated }
+    delete:
+      tags: [Me]
+      summary: Delete the account (LGPD anonymization)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password]
+              properties:
+                current_password: { type: string }
+                code: { type: string, description: Required when 2FA is enabled }
+      responses:
+        "204": { description: Account anonymized }
+        "422": { $ref: "#/components/responses/ReauthenticationFailed" }
+  /me/password:
+    patch:
+      tags: [Me]
+      summary: Change password (revokes every session and returns a new one)
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password]
+              properties:
+                current_password: { type: string }
+                password: { type: string }
+                password_confirmation: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "422": { $ref: "#/components/responses/ReauthenticationFailed" }
+  /me/email:
+    patch:
+      tags: [Me]
+      summary: Request an email change (confirmed at the new address)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, current_password]
+              properties:
+                email: { type: string, format: email }
+                current_password: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/Message" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /me/export:
+    get:
+      tags: [Me]
+      summary: Export all of the data subject's data (LGPD)
+      responses:
+        "200":
+          description: JSON file (Content-Disposition attachment)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exported_at: { type: string, format: date-time }
+                  profile: { type: object }
+                  consents: { type: array, items: { type: object } }
+                  sessions: { type: array, items: { type: object } }
+                  activity: { type: array, items: { type: object } }
+  /me/sessions:
+    get:
+      tags: [Me]
+      summary: Active sessions (one per device)
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Session" }
+  /me/sessions/{id}:
+    delete:
+      tags: [Me]
+      summary: Revoke a session immediately
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204": { description: Session ended }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /me/consents:
+    get:
+      tags: [Me]
+      summary: Current consent status
+      responses:
+        "200":
+          description: Per kind (terms, privacy, marketing)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: { $ref: "#/components/schemas/ConsentStatus" }
+    post:
+      tags: [Me]
+      summary: Grant or revoke a consent (keeps history)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, granted]
+              properties:
+                kind: { type: string, enum: [terms, privacy, marketing] }
+                granted: { type: boolean }
+      responses:
+        "201": { description: Recorded }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /me/two_factor:
+    get:
+      tags: [Me]
+      summary: 2FA status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+                      required: { type: boolean }
+                      backup_codes_remaining: { type: integer }
+    delete:
+      tags: [Me]
+      summary: Disable 2FA (not allowed for admins)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reauthentication" }
+      responses:
+        "204": { description: Disabled }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ReauthenticationFailed" }
+  /me/two_factor/setup:
+    post:
+      tags: [Me]
+      summary: Step 1 — generate the secret and QR code (provisioning_uri)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password]
+              properties:
+                current_password: { type: string }
+      responses:
+        "200":
+          description: Secret generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      secret: { type: string }
+                      provisioning_uri: { type: string, description: Render as a QR code }
+        "422": { $ref: "#/components/responses/ReauthenticationFailed" }
+  /me/two_factor/enable:
+    post:
+      tags: [Me]
+      summary: Step 2 — confirm with a code and enable (backup codes are returned only once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/BackupCodes" }
+        "422": { $ref: "#/components/responses/ReauthenticationFailed" }
+  /me/two_factor/backup_codes:
+    post:
+      tags: [Me]
+      summary: Generate new backup codes (invalidates the previous ones)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reauthentication" }
+      responses:
+        "200": { $ref: "#/components/responses/BackupCodes" }
+        "422": { $ref: "#/components/responses/ReauthenticationFailed" }
+  /roles:
+    get:
+      tags: [Me]
+      summary: List roles
+      responses:
+        "200":
+          description: Roles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string, enum: [user, admin] }
+                        label: { type: string }
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users (requires admin with 2FA)
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+        - { name: role, in: query, schema: { type: string, enum: [user, admin] } }
+        - { name: email, in: query, description: Exact match, schema: { type: string } }
+      responses:
+        "200":
+          description: Page of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminUser" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Admin]
+      summary: Create a user (already confirmed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminUserInput" }
+      responses:
+        "201": { description: Created }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Admin]
+      summary: Show user
+      responses:
+        "200": { description: User }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Admin]
+      summary: Update a user (role, password, profile)
+      description: Changing the password revokes every session of the user. Admins cannot change their own role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminUserInput" }
+      responses:
+        "200": { description: Updated }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Admin]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [Admin]
+      summary: Anonymize the user (LGPD)
+      responses:
+        "204": { description: Anonymized }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/users/{id}/unlock:
+    post:
+      tags: [Admin]
+      summary: Unlock the account
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Unlocked }
+  /admin/users/{id}/two_factor:
+    delete:
+      tags: [Admin]
+      summary: Reset another user's 2FA (and revoke their sessions)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204": { description: 2FA reset }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/audit_logs:
+    get:
+      tags: [Admin]
+      summary: Audit trail
+      parameters:
+        - { name: action_name, in: query, schema: { type: string }, example: user.role_changed }
+        - { name: actor_id, in: query, schema: { type: string, format: uuid } }
+        - { name: target_id, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Page of events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditLog" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TokenTransport:
+      name: X-Token-Transport
+      in: header
+      required: false
+      description: Send `cookie` to receive the refresh token in an httpOnly cookie
+      schema: { type: string, enum: [cookie] }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: object
+              description: Validation errors per field
+              additionalProperties:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string, example: too_short }
+                    message: { type: string, example: Password is too short (minimum is 8 characters) }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        first_name: { type: string }
+        last_name: { type: [string, "null"] }
+        full_name: { type: string }
+        phone: { type: [string, "null"] }
+        role: { type: string, enum: [user, admin] }
+        email_confirmed: { type: boolean }
+        two_factor_enabled: { type: boolean }
+        pending_email: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdminUser:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            last_sign_in_at: { type: [string, "null"], format: date-time }
+            sign_in_count: { type: integer }
+            confirmed_at: { type: [string, "null"], format: date-time }
+            failed_login_attempts: { type: integer }
+            locked_until: { type: [string, "null"], format: date-time }
+            locked: { type: boolean }
+    AdminUserInput:
+      type: object
+      properties:
+        email: { type: string }
+        first_name: { type: string }
+        last_name: { type: string }
+        phone: { type: string }
+        role: { type: string, enum: [user, admin] }
+        password: { type: string }
+        password_confirmation: { type: string }
+    Tokens:
+      type: object
+      properties:
+        token_type: { type: string, example: Bearer }
+        access_token: { type: string }
+        expires_in: { type: integer, example: 900 }
+        expires_at: { type: string, format: date-time }
+        refresh_token: { type: string, description: Omitted in cookie mode }
+        refresh_token_transport: { type: string, enum: [cookie] }
+    SessionResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user: { $ref: "#/components/schemas/User" }
+            tokens: { $ref: "#/components/schemas/Tokens" }
+            two_factor_setup_required: { type: boolean, description: Admins without 2FA must set it up before using the admin area }
+    TwoFactorChallengeResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            two_factor_required: { type: boolean, const: true }
+            challenge_token: { type: string }
+            expires_in: { type: integer, example: 300 }
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        current: { type: boolean }
+        user_agent: { type: [string, "null"] }
+        ip_address: { type: [string, "null"] }
+        started_at: { type: string, format: date-time }
+        last_activity_at: { type: string, format: date-time }
+    ConsentStatus:
+      type: object
+      properties:
+        granted: { type: boolean }
+        version: { type: [string, "null"] }
+        at: { type: [string, "null"], format: date-time }
+        current_version: { type: string }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string }
+        actor_id: { type: [string, "null"], format: uuid }
+        target_type: { type: [string, "null"] }
+        target_id: { type: [string, "null"], format: uuid }
+        metadata: { type: object }
+        ip_address: { type: [string, "null"] }
+        user_agent: { type: [string, "null"] }
+        request_id: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+    Pagination:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        pages: { type: integer }
+        next: { type: [integer, "null"] }
+        prev: { type: [integer, "null"] }
+    TokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    Reauthentication:
+      type: object
+      required: [current_password, code]
+      properties:
+        current_password: { type: string }
+        code: { type: string }
+  responses:
+    Session:
+      description: Session created
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SessionResponse" }
+    Message:
+      description: Message
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  message: { type: string }
+    BackupCodes:
+      description: Backup codes (show them only once)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  backup_codes: { type: array, items: { type: string } }
+    BadRequest:
+      description: Missing parameter or invalid JSON
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Not authenticated / invalid token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Forbidden (includes `two_factor_setup_required` and `email_not_confirmed`)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Invalid data (`validation_failed`)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ReauthenticationFailed:
+      description: Wrong current password or 2FA code (`invalid_current_password`, `invalid_two_factor_code`)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many requests (`rate_limited`, Retry-After header)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

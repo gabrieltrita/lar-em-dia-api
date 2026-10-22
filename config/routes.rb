@@ -4,10 +4,8 @@ require "sidekiq/cron/web"
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
-  # Painel do Sidekiq (protegido por basic auth): /sidekiq
   mount Sidekiq::Web => "/sidekiq"
 
-  # Documentação OpenAPI (Swagger UI). Em produção só com ENABLE_API_DOCS=true.
   if Rails.env.local? || ENV["ENABLE_API_DOCS"] == "true"
     get "docs" => "docs#index"
     get "docs/openapi.yaml" => "docs#spec", as: :openapi_spec

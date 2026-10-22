@@ -4,15 +4,12 @@ class UserPolicy < ApplicationPolicy
   def create? = admin?
   def update? = admin? || own_record?
 
-  # Admin não pode excluir a si mesmo pela área administrativa.
   def destroy? = admin? && !own_record?
 
-  # Só admin troca role, e nunca a própria (evita ficar sem admin).
   def change_role? = admin? && !own_record?
 
   def unlock? = admin?
 
-  # O próprio admin usa /me/two_factor; aqui é só para outros usuários.
   def reset_two_factor? = admin? && !own_record?
 
   class Scope < Scope

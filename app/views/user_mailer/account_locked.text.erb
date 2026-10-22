@@ -1,5 +1,5 @@
-Conta bloqueada temporariamente
+Account temporarily locked
 
-Olá, <%= @user.first_name %>. Detectamos várias tentativas de login com senha errada e bloqueamos sua conta até <%= l(@locked_until, format: :long) %>.
+Hi <%= @user.first_name %>, we detected several failed login attempts and locked your account until <%= l(@locked_until, format: :long) %>.
 
-Se não foi você, recomendamos redefinir a senha (isso também desbloqueia a conta): <%= @forgot_url %>
+If this was not you, we recommend resetting your password (it also unlocks the account): <%= @forgot_url %>
