@@ -35,6 +35,15 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
     expect(response).to have_http_status(:too_many_requests)
   end
 
+  it "throttles sign-up, confirmation resend and password reset by email across IPs" do
+    { "/api/v1/auth/register" => "signup", "/api/v1/auth/confirm/resend" => "resend", "/api/v1/auth/password/forgot" => "forgot" }.each_with_index do |(path, name), index|
+      4.times { |i| post path, params: { email: "#{name}@example.com" }, as: :json, env: { "REMOTE_ADDR" => "10.3.#{index}.#{i + 1}" } }
+
+      expect(response).to have_http_status(:too_many_requests), path
+      expect(json.dig("error", "code")).to eq("rate_limited")
+    end
+  end
+
   it "keeps the request body readable by Rails" do
     user = create(:user, email: "ok@example.com", password: "Senha@123")
     post "/api/v1/auth/login", params: { email: user.email, password: "Senha@123" }, as: :json

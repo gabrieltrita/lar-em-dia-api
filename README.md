@@ -66,6 +66,8 @@ GitHub Actions runs all four on every pull request.
 
 `bundle exec rspec` enforces **100% line and branch coverage** with SimpleCov (`.simplecov`) and fails below it, locally and in CI. The HTML report is written to `coverage/index.html`; in CI it is attached to the run as the `coverage` artifact. Keep it at 100% by testing new code, not by lowering the threshold or excluding files; remove dead code instead.
 
+Request specs also enforce the API contract with `openapi_first` (`spec/support/openapi.rb`): every response under `/api/v1` is validated against `docs/openapi.yaml` (documented status and body schema), and the suite fails unless **100% of the documented responses** are exercised by some spec. Undocumented 401, 404 and 500 responses are tolerated on every route. The API coverage report is written to `coverage/openapi_coverage.html`. Documenting a new status therefore needs a spec that triggers it, and changing a response needs the matching schema change.
+
 ## Documentation
 
 - **OpenAPI / Swagger UI**: http://localhost:3000/docs (source: [`docs/openapi.yaml`](docs/openapi.yaml)). A spec fails if any route is undocumented.

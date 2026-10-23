@@ -14,7 +14,7 @@ RSpec.describe ApiResourceGenerator do
   after { FileUtils.remove_entry(root) }
 
   def generate(*args)
-    described_class.new(args, {}, destination_root: root, shell: Thor::Shell::Basic.new).tap { |generator| allow(generator).to receive(:say) }.invoke_all
+    described_class.new(args, { quiet: true }, destination_root: root).tap { |generator| allow(generator).to receive(:say) }.invoke_all
   end
 
   def read(file)
@@ -90,7 +90,7 @@ RSpec.describe ApiResourceGenerator do
   end
 
   it "prints the manual steps" do
-    generator = described_class.new([ "Product", "name:string" ], {}, destination_root: root)
+    generator = described_class.new([ "Product", "name:string" ], { quiet: true }, destination_root: root)
     allow(generator).to receive(:say)
     generator.invoke_all
     expect(generator).to have_received(:say).with(/has_many :products, dependent: :destroy.*User::PERSONAL_DATA.*db:migrate/m)

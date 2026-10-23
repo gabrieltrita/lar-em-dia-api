@@ -60,6 +60,16 @@ RSpec.describe "Admin::Users", type: :request do
     expect(AuditLog.find_by(action: "user.created", target_id: created.id).actor).to eq(admin)
   end
 
+  it "answers 404 for an unknown or anonymized user" do
+    get "/api/v1/admin/users/#{SecureRandom.uuid}", headers: auth_headers(admin)
+    expect(response).to have_http_status(:not_found)
+    expect(json.dig("error", "code")).to eq("not_found")
+
+    user.anonymize!
+    get "/api/v1/admin/users/#{user.id}", headers: auth_headers(admin)
+    expect(response).to have_http_status(:not_found)
+  end
+
   it "returns per-field errors when creating an invalid user" do
     post "/api/v1/admin/users", params: { email: "not-an-email", password: "short" }, headers: auth_headers(admin), as: :json
 
@@ -74,6 +84,12 @@ RSpec.describe "Admin::Users", type: :request do
     expect(response).to have_http_status(:ok)
     expect(user.reload.first_name).to eq("Renamed")
     expect(AuditLog.find_by(action: "user.updated", target_id: user.id).metadata).to eq("fields" => [ "first_name" ])
+  end
+
+  it "accepts PUT as an alias of PATCH" do
+    put "/api/v1/admin/users/#{user.id}", params: { first_name: "Put" }, headers: auth_headers(admin), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(user.reload.first_name).to eq("Put")
   end
 
   it "promotes a user to admin and records who did it" do
@@ -115,6 +131,12 @@ RSpec.describe "Admin::Users", type: :request do
     expect(response).to have_http_status(:ok)
     expect(user.reload).not_to be_access_locked
     expect(json.dig("data", "locked")).to be(false)
+  end
+
+  it "does not let admins reset their own 2FA" do
+    delete "/api/v1/admin/users/#{admin.id}/two_factor", headers: auth_headers(admin)
+    expect(response).to have_http_status(:forbidden)
+    expect(admin.reload).to be_two_factor_enabled
   end
 
   it "resets 2FA for a user who lost their phone and ends their sessions" do
