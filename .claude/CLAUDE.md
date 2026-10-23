@@ -37,6 +37,7 @@ app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
 app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
+lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
 config/app.yml             app identity (name, slug, domain), read through Rails.configuration.x.app
 lib/tasks/encryption.rake  bin/rails encryption:reencrypt
 docs/openapi.yaml, docs/SECURITY.md
@@ -69,6 +70,7 @@ spec/                      models, requests, mailers, policies, services, contro
 ## Conventions
 
 - Never hardcode the app name, slug or domain in code, config, seeds or specs: read `Rails.configuration.x.app` (`name`, `slug`, `domain`). Only `config/app.yml` and the `TritaApi` module name may contain them.
+- `slug` is lowercase letters and digits only, starting with a letter. A new document that mentions the app name must be added to `AppRenamer::DOCUMENTS`, or `bin/rename` will leave it behind.
 - Responses: `{ data, meta }`; errors through `render_error(status:, code:, message:, details:)` or the exceptions handled in `ErrorHandling`. Validation details: `{ field => [ { code, message } ] }`.
 - Serialization with Blueprinter; pagination with Pagy (`pagy(scope)` + `pagination_meta`, `limit` up to 100).
 - Controllers live under `Api::V1`; unauthenticated actions use `skip_before_action :authenticate_user!`.
@@ -104,3 +106,5 @@ docker compose exec api bundle exec rspec
 - Rotating the deterministic encryption key is not supported in place; see `docs/SECURITY.md`.
 - `Auth::JsonWebToken::ISSUER`, `TokenResponder::REFRESH_COOKIE` and `TwoFactorAuthenticatable::OTP_ISSUER` are computed from `config/app.yml` when the classes load: restart after editing it. Changing `slug` in a deployed app invalidates every token, refresh cookie and cached denylist entry.
 - The backup code HMAC key is derived with the fixed label `two_factor/backup_codes`; never tie it to the app name, or a rename invalidates every user's backup codes.
+- `spec/rails_helper.rb` forces `RAILS_ENV=test` (not `||=`): the api container runs with `RAILS_ENV=development`, and running specs there would load the wrong gem groups and wipe development data. Keep it forced.
+- `spec/lib/app_renamer_spec.rb` reads the current identity from `config/app.yml` and renames to neutral slugs (`zetaapp`, `omegaapp`), so it passes in any fork; keep it independent of the name `trita`.
