@@ -323,7 +323,7 @@ Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. 
 
 ### 15. Error monitoring and logs
 
-Set `SENTRY_DSN` to enable Sentry for Rails and Sidekiq. Only the user id is sent; request bodies, cookies, query strings and auth headers are stripped.
+Set `SENTRY_DSN` to enable Sentry for Rails and Sidekiq. Events carry the exception class, the stacktrace, the request method, URL path and safe headers, the `request_id` tag, the user id and breadcrumbs of what ran before the error (controller, timings, cache hits and SQL statement names). They never carry exception or manual messages (replaced by `[FILTERED]`), request bodies, query strings, cookies, `Authorization`, `X-Token-Transport`, `User-Agent`, the client IP, SQL text, cache keys (Rack::Attack keys contain emails) or Sidekiq job arguments. The policy lives in `lib/sentry_config.rb` and is covered by specs.
 
 Logs are structured JSON in production with no personal data (see "Production"). Find everything about one request by its `request_id`, which is also returned in the `X-Request-Id` response header, stored in audit log entries and attached to Sentry events.
 

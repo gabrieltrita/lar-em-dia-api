@@ -40,6 +40,7 @@ app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, Token
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
 lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
+lib/sentry_config.rb       Sentry privacy policy (SentryConfig.apply / .scrub)
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
 lib/generators/api_resource/  `bin/rails g api_resource Name field:type`: user-owned resource in the notes shape (templates in templates/*.tt)
 config/app.yml             app identity (name, slug, domain), read through Rails.configuration.x.app
@@ -73,6 +74,7 @@ spec/                      models, requests, mailers, policies, services, contro
 - Production refuses to boot without strong secrets (`EnvValidator`); add new required variables there and to `.env.example`.
 - Content a user creates (notes, orders, messages) is listed in `User::PERSONAL_DATA`: `UserDataExport` exports it under `content` with `<Model>Blueprint`, and `User#anonymize!` destroys it in the same transaction. Its personal columns are encrypted and filtered from logs.
 - Logs never carry personal data: no params, bodies, IPs, user agents, exception messages or job arguments (`JsonLogFormatter` logs only an exception's class; `config.active_job.log_arguments` is off with JSON logs). Identify requests by `request_id` and users by `user_id` (UUID). Log a Hash of safe fields (`Rails.logger.error({ error: e.class.name, ... })`), never an exception message or interpolated values.
+- Sentry events never carry personal data. `lib/sentry_config.rb` is the single policy (used by the initializer and by `with_sentry` in specs): `send_default_pii = false`, no client IP, no `Authorization`/`Cookie`/`X-Token-Transport`/`User-Agent` headers, exception and manual messages replaced by `[FILTERED]`, no SQL text or cache keys in breadcrumbs, no Sidekiq job arguments, user reduced to its id. New personal headers, breadcrumb fields or contexts go there, with a spec.
 
 ## Conventions
 
@@ -102,7 +104,7 @@ docker compose exec api bundle exec rspec
 - Compose names containers `<project>-<service>-1` (for example `trita-api-1`); always address services by name (`docker compose exec api`). The Redis cache (JWT denylist, Rack::Attack) is namespaced by `slug`; Sidekiq does not support namespaces, so apps sharing a Redis need separate databases or instances.
 - Redis requires `REDIS_PASSWORD`; it must also appear in `REDIS_URL` and `SIDEKIQ_REDIS_URL`.
 - Tests can run on the host against the compose Postgres (`.env` points to localhost). Rack::Attack is disabled in tests except in `spec/requests/rack_attack_spec.rb`; the test cache store is `:memory_store`.
-- Coverage report: `coverage/index.html` locally, `coverage` artifact in CI. `with_sentry` (spec/support/sentry_helpers.rb) initializes Sentry with an in-memory transport for specs that assert on reported errors.
+- Coverage report: `coverage/index.html` locally, `coverage` artifact in CI. `with_sentry` (spec/support/sentry_helpers.rb) initializes Sentry with the real `SentryConfig`, an in-memory transport and the breadcrumbs logger; `sentry_payload(event)` serializes an event without stacktrace source lines, so leak assertions are not fooled by literals in the spec file itself.
 - API contract coverage report: `coverage/openapi_coverage.html` (also in the CI artifact). A partial run (`rspec spec/some_spec.rb`) fails both coverage gates on purpose; run the full suite before trusting a failure.
 - Logs: JSON in production (`config.x.json_logs`), text in development unless `LOG_FORMAT=json`. Request lines come from lograge (`config/initializers/lograge.rb`) with `request_id`/`user_id` added in `ApplicationController#append_info_to_payload`; Sidekiq uses its own JSON formatter.
 
@@ -132,3 +134,5 @@ docker compose exec api bundle exec rspec
 - `RedisCacheStore` swallows connection errors (reads miss, writes are dropped), so the cache check writes and reads back a unique key instead of waiting for an exception.
 - A stopped Sidekiq stays registered in `Sidekiq::ProcessSet` until its heartbeat expires (about a minute), so `/health` turns `degraded` with that delay.
 - `/up` and `/health` are excluded from `config.hosts` checks, the general `req/ip` throttle and lograge; keep that list in sync when adding infrastructure endpoints.
+- Sentry 7 with `send_default_pii = false` never collects request bodies, query strings or cookies, but it does send `User-Agent` and `REMOTE_ADDR` unless `SentryConfig` removes them; the scrubbing specs prove both, so a Sentry upgrade that changes this fails CI.
+- The ActiveSupport breadcrumbs logger is injected by sentry-rails only at boot; specs inject and detach it inside `with_sentry`.
