@@ -29,6 +29,7 @@ app/controllers/api/v1/auth/   registrations, confirmations, sessions, two_facto
 app/controllers/api/v1/        me (profile, password, email, export, destroy), roles
 app/controllers/api/v1/me/     sessions, two_factor, consents
 app/controllers/api/v1/admin/  base (admin + 2FA required), users, audit_logs
+app/controllers/api/v1/notes_controller.rb  example domain module (Note, NotePolicy, NoteBlueprint); see docs/FORKING.md to remove it
 app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENABLE_API_DOCS=true)
 app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
@@ -39,6 +40,7 @@ app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
 config/app.yml             app identity (name, slug, domain), read through Rails.configuration.x.app
+config/routes/app.rb       the app's routes, drawn inside /api/v1 by `draw :app`; the base never edits it
 lib/tasks/encryption.rake  bin/rails encryption:reencrypt
 docs/openapi.yaml, docs/SECURITY.md, docs/FORKING.md (how to start an app from this base)
 spec/                      models, requests, mailers, policies, services, controllers (production-only error handling), jobs, lib, tasks; helpers in spec/support (auth_helpers, sentry_helpers)
@@ -66,6 +68,7 @@ spec/                      models, requests, mailers, policies, services, contro
 - `AuditLog` and `Consent` rows are immutable (`readonly?`). Record sensitive events with `AuditLog.record!(action, target:, actor:, metadata:)`; `metadata` never holds personal data and `action` must be in `AuditLog::ACTIONS`.
 - New sensitive or unauthenticated endpoints get a Rack::Attack throttle in `config/initializers/rack_attack.rb` (the request body is JSON; use `json_param`).
 - Production refuses to boot without strong secrets (`EnvValidator`); add new required variables there and to `.env.example`.
+- Content a user creates (notes, orders, messages) is listed in `User::PERSONAL_DATA`: `UserDataExport` exports it under `content` with `<Model>Blueprint`, and `User#anonymize!` destroys it in the same transaction. Its personal columns are encrypted and filtered from logs.
 
 ## Conventions
 
@@ -79,7 +82,7 @@ spec/                      models, requests, mailers, policies, services, contro
 - Generators produce UUID keys, RSpec specs and FactoryBot factories (`bin/rails g model Product name:string`).
 - Specs: request specs for every endpoint, English descriptions, helpers `auth_headers`, `tokens_for`, `bearer`, `login`, `otp_code`, `json`. Factories: `:user` is confirmed; traits `:unconfirmed`, `:with_2fa`, `:admin` (with 2FA), `:admin_without_2fa`.
 - Default locale `:en` only; user-facing copy lives in `config/locales/en.yml` or the mailer views.
-- Adding an endpoint: route, controller, policy if needed, Blueprint, `docs/openapi.yaml` entry (plus any new error code), request spec, throttle if sensitive, audit event if sensitive, README "Features and how to use them" section.
+- Adding an endpoint: route (in `config/routes/app.rb` for app features), controller, policy if needed, Blueprint, `docs/openapi.yaml` entry (plus any new error code), request spec, throttle if sensitive, audit event if sensitive, README "Features and how to use them" section.
 
 ## Running
 
@@ -109,3 +112,5 @@ docker compose exec api bundle exec rspec
 - The backup code HMAC key is derived with the fixed label `two_factor/backup_codes`; never tie it to the app name, or a rename invalidates every user's backup codes.
 - `spec/rails_helper.rb` forces `RAILS_ENV=test` (not `||=`): the api container runs with `RAILS_ENV=development`, and running specs there would load the wrong gem groups and wipe development data. Keep it forced.
 - `spec/lib/app_renamer_spec.rb` reads the current identity from `config/app.yml` and renames to neutral slugs (`zetaapp`, `omegaapp`), so it passes in any fork; keep it independent of the name `trita`.
+- `config/routes/app.rb` must exist (`draw :app` fails at boot otherwise); keep it even when empty.
+- `User::PERSONAL_DATA` must never be empty while the suite enforces 100%: the export's `blueprint_for` would be unreachable. Replace `notes` with the app's first personal-data model in the same change that removes the example.

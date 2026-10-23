@@ -107,6 +107,16 @@ RSpec.describe User do
       expect(User.find_by(email: "titular@example.com")).to be_nil
       expect(raw_row(user, "first_name")["first_name"]).not_to include("Deleted")
     end
+
+    it "deletes the content listed in PERSONAL_DATA" do
+      create_list(:note, 2, user: user)
+      other = create(:note)
+
+      user.anonymize!
+
+      expect(user.notes).to be_empty
+      expect(Note.exists?(other.id)).to be(true)
+    end
   end
 
   describe "2FA" do

@@ -8,10 +8,13 @@ class User < ApplicationRecord
   BASE_LOCK_DURATION = 15.minutes
   MAX_LOCK_DURATION = 24.hours
 
+  PERSONAL_DATA = %i[notes].freeze
+
   has_secure_password reset_token: false
 
   has_many :refresh_tokens, dependent: :delete_all
   has_many :consents, dependent: :delete_all
+  has_many :notes, dependent: :destroy
 
   encrypts :email, deterministic: true, downcase: true
   encrypts :first_name, :last_name, :phone, :unconfirmed_email, :otp_secret
@@ -119,6 +122,7 @@ class User < ApplicationRecord
   def anonymize!
     transaction do
       revoke_all_sessions!(reason: "anonymized")
+      PERSONAL_DATA.each { |association| public_send(association).destroy_all }
       update_columns(
         email: "anon-#{id}@anonymized.invalid",
         first_name: "Deleted",

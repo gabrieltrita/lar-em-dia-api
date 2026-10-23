@@ -90,14 +90,16 @@ app/
     api/v1/auth/     register, confirm, login, two_factor, refresh, logout, passwords
     api/v1/me/       sessions, two_factor, consents
     api/v1/admin/    users, audit_logs
+    api/v1/notes_controller.rb   example domain module (see feature 16)
   jobs/              MaintenanceCleanupJob
   mailers/           UserMailer
-  models/            User, RefreshToken, AuditLog, Consent, Current
+  models/            User, RefreshToken, AuditLog, Consent, Current, Note (example)
   policies/          Pundit
   services/auth/     JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge
 bin/rename           renames the app after forking (see App identity)
 lib/                 EnvValidator, AppRenamer, rake tasks
 config/app.yml       app identity (name, slug, domain)
+config/routes/app.rb the app's own routes (drawn inside /api/v1; the base never edits it)
 config/schedule.yml  sidekiq-cron schedule
 docs/                openapi.yaml, SECURITY.md, FORKING.md
 spec/                RSpec
@@ -301,3 +303,21 @@ Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. 
 ### 15. Error monitoring
 
 Set `SENTRY_DSN` to enable Sentry for Rails and Sidekiq. Only the user id is sent; request bodies, cookies, query strings and auth headers are stripped.
+
+### 16. Notes (example domain module)
+
+A small resource that shows every convention a new feature follows; remove it when starting a real app (see "Removing the example module" in `docs/FORKING.md`).
+
+```http
+GET    /notes?page=1&limit=20
+POST   /notes          { "title": "Groceries", "body": "Milk" }
+GET    /notes/:id
+PATCH  /notes/:id      { "title": "Renamed" }
+DELETE /notes/:id
+```
+
+- Each note belongs to the current user, taken from the session; a `user_id` in the body is ignored.
+- Another user's note answers `404 not_found` (not 403), even for admins, so ids cannot be probed.
+- `title` (required, up to 200) and `body` (up to 10,000) are encrypted at rest and filtered from logs.
+- Listed in `User::PERSONAL_DATA`: included under `content.notes` in `GET /me/export` and deleted when the account is anonymized.
+- Routes live in `config/routes/app.rb`; the code is `Note`, `NotePolicy`, `NoteBlueprint` and `Api::V1::NotesController`, with request, model and policy specs.

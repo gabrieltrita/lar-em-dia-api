@@ -20,7 +20,16 @@ class UserDataExport
       end,
       activity: AuditLog.involving(@user).recent.limit(1000).map do |log|
         { action: log.action, at: log.created_at, ip_address: log.ip_address, user_agent: log.user_agent }
+      end,
+      content: User::PERSONAL_DATA.index_with do |association|
+        blueprint_for(association).render_as_hash(@user.public_send(association))
       end
     }
+  end
+
+  private
+
+  def blueprint_for(association)
+    "#{@user.association(association).klass.name}Blueprint".constantize
   end
 end

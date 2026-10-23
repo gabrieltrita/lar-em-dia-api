@@ -52,6 +52,8 @@ tags:
   - name: Auth
   - name: Me
   - name: Admin
+  - name: Notes
+    description: Example domain module (private notes per user). Remove it when starting a new app; see docs/FORKING.md.
 paths:
   /auth/register:
     post:
@@ -347,6 +349,11 @@ paths:
                   consents: { type: array, items: { type: object } }
                   sessions: { type: array, items: { type: object } }
                   activity: { type: array, items: { type: object } }
+                  content:
+                    type: object
+                    description: Personal content listed in User::PERSONAL_DATA, one key per association
+                    properties:
+                      notes: { type: array, items: { $ref: "#/components/schemas/Note" } }
   /me/sessions:
     get:
       tags: [Me]
@@ -614,6 +621,69 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/AuditLog" }
                   meta: { $ref: "#/components/schemas/Pagination" }
+  /notes:
+    get:
+      tags: [Notes]
+      summary: List the current user's notes, newest first
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of notes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Note" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+    post:
+      tags: [Notes]
+      summary: Create a note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteInput" }
+      responses:
+        "201": { $ref: "#/components/responses/Note" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /notes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Notes]
+      summary: Show a note
+      description: Another user's note answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/Note" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Notes]
+      summary: Update a note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteInput" }
+      responses:
+        "200": { $ref: "#/components/responses/Note" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Notes]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/Note" }
+    delete:
+      tags: [Notes]
+      summary: Delete a note
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
 security:
   - bearerAuth: []
 components:
@@ -745,6 +815,20 @@ components:
         user_agent: { type: [string, "null"] }
         request_id: { type: [string, "null"] }
         created_at: { type: string, format: date-time }
+    Note:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, maxLength: 200 }
+        body: { type: [string, "null"], maxLength: 10000 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    NoteInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 10000 }
     Pagination:
       type: object
       properties:
@@ -776,6 +860,14 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/SessionResponse" }
+    Note:
+      description: Note
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/Note" }
     Message:
       description: Message
       content:
