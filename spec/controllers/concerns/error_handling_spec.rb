@@ -26,10 +26,14 @@ RSpec.describe ErrorHandling, type: :controller do
     expect(JSON.parse(response.body)).to eq("error" => { "code" => "internal_error", "message" => "Internal server error" })
   end
 
-  it "logs the error with its backtrace" do
-    allow(Rails.logger).to receive(:error)
+  it "logs the error class and backtrace but never its message" do
+    logged = []
+    allow(Rails.logger).to receive(:error) { |entry| logged << entry }
     get :index
-    expect(Rails.logger).to have_received(:error).with(/\[RuntimeError\] secret detail\n.*error_handling_spec\.rb/m)
+
+    expect(logged.sole).to include(error: "RuntimeError")
+    expect(logged.sole[:backtrace].first).to include("error_handling_spec.rb")
+    expect(logged.sole.to_s).not_to include("secret detail")
   end
 
   it "reports the error to Sentry when enabled" do

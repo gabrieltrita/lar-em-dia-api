@@ -35,7 +35,7 @@ class AuditLog < ApplicationRecord
       request_id: Current.request_id
     )
   rescue => e
-    Rails.logger.error("[AuditLog] failed to record #{action}: #{e.class} #{e.message}")
+    Rails.logger.error({ message: "AuditLog failed to record", action: action, error: e.class.name })
     Sentry.capture_exception(e) if defined?(Sentry) && Sentry.initialized?
     nil
   end
