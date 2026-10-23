@@ -55,5 +55,15 @@ RSpec.describe "LGPD: consents and data export", type: :request do
       expect(json["profile"].keys).not_to include("password_digest", "otp_secret")
       expect(AuditLog.where(action: "user.data_exported", target_id: user.id)).to exist
     end
+
+    it "includes every PERSONAL_DATA association, serialized by its blueprint" do
+      note = create(:note, user: user, title: "Diary")
+      create(:note)
+
+      get "/api/v1/me/export", headers: auth_headers(user)
+
+      expect(json["content"].keys).to eq(User::PERSONAL_DATA.map(&:to_s))
+      expect(json.dig("content", "notes")).to eq([ NoteBlueprint.render_as_hash(note).as_json ])
+    end
   end
 end
