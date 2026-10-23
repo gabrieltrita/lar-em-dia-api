@@ -99,7 +99,7 @@ bin/rename           renames the app after forking (see App identity)
 lib/                 EnvValidator, AppRenamer, rake tasks
 config/app.yml       app identity (name, slug, domain)
 config/schedule.yml  sidekiq-cron schedule
-docs/                openapi.yaml, SECURITY.md
+docs/                openapi.yaml, SECURITY.md, FORKING.md
 spec/                RSpec
 ```
 
@@ -116,6 +116,8 @@ spec/                RSpec
 `slug` must start with a letter and contain only lowercase letters and digits, because it becomes part of database, cookie, container and image names. Code reads the values through `Rails.configuration.x.app`.
 
 To rename the app after forking, run `bin/rename SLUG [--name NAME] [--domain DOMAIN]` (for example `bin/rename acme`, or `bin/rename minhaloja --name "Minha Loja" --domain minhaloja.com.br`). It rewrites `config/app.yml`, the `TritaApi` module, the Compose project and image names and every mention in `README.md`, `docs/` and `.claude/CLAUDE.md`, validates everything before writing, and prints the manual steps that remain (new secrets, security contact, git remotes, databases). Name defaults to the capitalized slug and domain to `SLUG.dev`.
+
+Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (repository and `upstream` remote, rename, secrets, first boot, where to put domain code, pulling fixes from the base).
 
 ## Production
 
