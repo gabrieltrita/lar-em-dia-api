@@ -621,6 +621,7 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/AuditLog" }
                   meta: { $ref: "#/components/schemas/Pagination" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /notes:
     get:
       tags: [Notes]
@@ -770,18 +771,22 @@ components:
         refresh_token_transport: { type: string, enum: [cookie] }
     SessionResponse:
       type: object
+      required: [data]
       properties:
         data:
           type: object
+          required: [user, tokens]
           properties:
             user: { $ref: "#/components/schemas/User" }
             tokens: { $ref: "#/components/schemas/Tokens" }
             two_factor_setup_required: { type: boolean, description: Admins without 2FA must set it up before using the admin area }
     TwoFactorChallengeResponse:
       type: object
+      required: [data]
       properties:
         data:
           type: object
+          required: [two_factor_required, challenge_token]
           properties:
             two_factor_required: { type: boolean, const: true }
             challenge_token: { type: string }

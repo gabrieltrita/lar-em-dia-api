@@ -169,6 +169,12 @@ RSpec.describe "Tokens, sessions and logout", type: :request do
   end
 
   describe "DELETE /api/v1/auth/logout" do
+    it "requires a token" do
+      delete "/api/v1/auth/logout", as: :json
+      expect(response).to have_http_status(:unauthorized)
+      expect(json.dig("error", "code")).to eq("missing_token")
+    end
+
     it "ends the current session immediately (access and refresh)" do
       tokens = tokens_for(user)
 

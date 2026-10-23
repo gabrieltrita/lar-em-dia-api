@@ -51,6 +51,12 @@ RSpec.describe "Me", type: :request do
       expect(user.email).to eq("eu@example.com")
     end
 
+    it "accepts PUT as an alias of PATCH" do
+      put "/api/v1/me", params: { first_name: "Put" }, headers: auth_headers(user), as: :json
+      expect(response).to have_http_status(:ok)
+      expect(user.reload.first_name).to eq("Put")
+    end
+
     it "returns per-field errors for an invalid profile" do
       patch "/api/v1/me", params: { first_name: "" }, headers: auth_headers(user), as: :json
       expect(response).to have_http_status(:unprocessable_content)
