@@ -1,0 +1,16 @@
+    <%= class_name %>:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+<% attributes.each do |attribute| -%>
+        <%= attribute.name %>: <%= openapi_type(attribute) %>
+<% end -%>
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    <%= class_name %>Input:
+      type: object
+      required: [<%= required_attributes.map(&:name).join(", ") %>]
+      properties:
+<% attributes.each do |attribute| -%>
+        <%= attribute.name %>: <%= openapi_type(attribute) %>
+<% end -%>

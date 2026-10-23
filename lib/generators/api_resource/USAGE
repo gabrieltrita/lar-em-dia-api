@@ -1,0 +1,9 @@
+Description:
+    Generates a resource owned by the current user, following the notes example:
+    migration, model, policy, blueprint, controller, route, OpenAPI docs, factory and
+    request, model and policy specs. The generated code passes the suite at 100% coverage.
+
+Example:
+    bin/rails generate api_resource Product name:string price:decimal active:boolean
+
+    Then add `has_many :products, dependent: :destroy` to User and run bin/rails db:migrate.

@@ -69,6 +69,13 @@ Add, do not edit. Files you create never conflict with the base; edits to base f
 - Routes: declare them in `config/routes/app.rb`. It is drawn inside the `/api/v1` namespace and the base never edits it, so it never conflicts.
 - Personal data: a model that stores content created by a user is added to `User::PERSONAL_DATA` (for example `%i[notes orders]`). Everything listed there is exported under `content` by `GET /me/export` (serialized by `<Model>Blueprint`) and deleted when the account is anonymized. Encrypt its personal columns (`text` + `encrypts`) and add them to `config/initializers/filter_parameter_logging.rb`.
 - The example module (`notes`) shows all of this end to end; copy its shape for the first real resource.
+- Start each user-owned resource with the generator, which produces the notes shape already passing the suite at 100%:
+
+  ```bash
+  bin/rails g api_resource Order total:decimal status:string
+  ```
+
+  Then follow the steps it prints (`has_many` in `User`; for personal data, `text` columns, `encrypts`, log filtering and `User::PERSONAL_DATA`) and run `bin/rails db:migrate`. Resources that are not owned by a user (catalogs, settings) are written by hand from the same pieces.
 - Extension points: `AuditLog::ACTIONS` for new audited events, `config/initializers/rack_attack.rb` for throttles on sensitive endpoints, `Consent::KINDS` for new consents, `docs/openapi.yaml` for every route and error code.
 - Follow `.claude/CLAUDE.md`: stable error codes, OpenAPI for every route, 100% coverage.
 

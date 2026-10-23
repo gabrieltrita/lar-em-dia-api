@@ -48,7 +48,7 @@ If a port is already taken, change `API_PORT`, `DB_PORT`, `REDIS_PORT`, `MAILHOG
 docker compose logs -f api sidekiq
 docker compose exec api bin/rails console
 docker compose exec api bundle exec rspec
-docker compose exec api bin/rails g model Product name:string
+docker compose exec api bin/rails g api_resource Product name:string price:decimal
 ```
 
 To run Rails on the host while using the containers for services: `docker compose up -d db redis mailhog`, then `bin/rails s` (`.env` points to `localhost`).
@@ -97,7 +97,7 @@ app/
   policies/          Pundit
   services/auth/     JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge
 bin/rename           renames the app after forking (see App identity)
-lib/                 EnvValidator, AppRenamer, rake tasks
+lib/                 EnvValidator, AppRenamer, generators/api_resource, rake tasks
 config/app.yml       app identity (name, slug, domain)
 config/routes/app.rb the app's own routes (drawn inside /api/v1; the base never edits it)
 config/schedule.yml  sidekiq-cron schedule
@@ -321,3 +321,13 @@ DELETE /notes/:id
 - `title` (required, up to 200) and `body` (up to 10,000) are encrypted at rest and filtered from logs.
 - Listed in `User::PERSONAL_DATA`: included under `content.notes` in `GET /me/export` and deleted when the account is anonymized.
 - Routes live in `config/routes/app.rb`; the code is `Note`, `NotePolicy`, `NoteBlueprint` and `Api::V1::NotesController`, with request, model and policy specs.
+
+### 17. Resource generator
+
+```bash
+bin/rails g api_resource Product name:string price:decimal active:boolean
+```
+
+Generates a resource owned by the current user in the shape of the notes example: migration (UUID key, `user_id`, `null: false` columns, list index), model, policy (owner only, 404 for anyone else), blueprint, paginated CRUD controller, the route in `config/routes/app.rb`, the OpenAPI tag, paths, schemas and response, a factory and request, model and policy specs. The generated code passes the suite at 100% line and branch coverage and RuboCop.
+
+Supported types: `string`, `text`, `integer`, `float`, `decimal`, `boolean`, `date`, `datetime`. At least one attribute must not be boolean; namespaced names are rejected. Afterwards the generator prints the manual steps: add `has_many` to `User`, and for personal data switch the columns to `text`, add `encrypts`, filter them from logs and list the association in `User::PERSONAL_DATA`.

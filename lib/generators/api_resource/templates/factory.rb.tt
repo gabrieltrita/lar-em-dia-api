@@ -1,0 +1,8 @@
+FactoryBot.define do
+  factory :<%= file_name %> do
+    user
+<% attributes.each do |attribute| -%>
+    <%= attribute.name %> { <%= sample(attribute) %> }
+<% end -%>
+  end
+end

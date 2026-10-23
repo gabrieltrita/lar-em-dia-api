@@ -1,0 +1,54 @@
+module Api
+  module V1
+    class <%= plural_class_name %>Controller < ApplicationController
+      include Paginatable
+
+      before_action :set_<%= file_name %>, only: %i[show update destroy]
+
+      def index
+        authorize <%= class_name %>
+        pagy, <%= plural_table_name %> = pagy(policy_scope(<%= class_name %>).recent)
+        render json: { data: <%= class_name %>Blueprint.render_as_hash(<%= plural_table_name %>), meta: pagination_meta(pagy) }
+      end
+
+      def show
+        render json: { data: <%= class_name %>Blueprint.render_as_hash(@<%= file_name %>) }
+      end
+
+      def create
+        <%= file_name %> = current_user.<%= plural_table_name %>.new(<%= file_name %>_params)
+        authorize <%= file_name %>
+
+        if <%= file_name %>.save
+          render json: { data: <%= class_name %>Blueprint.render_as_hash(<%= file_name %>) }, status: :created
+        else
+          render_validation_errors(<%= file_name %>)
+        end
+      end
+
+      def update
+        if @<%= file_name %>.update(<%= file_name %>_params)
+          render json: { data: <%= class_name %>Blueprint.render_as_hash(@<%= file_name %>) }
+        else
+          render_validation_errors(@<%= file_name %>)
+        end
+      end
+
+      def destroy
+        @<%= file_name %>.destroy!
+        head :no_content
+      end
+
+      private
+
+      def set_<%= file_name %>
+        @<%= file_name %> = policy_scope(<%= class_name %>).find(params[:id])
+        authorize @<%= file_name %>
+      end
+
+      def <%= file_name %>_params
+        params.permit(<%= attributes.map { |attribute| ":#{attribute.name}" }.join(", ") %>)
+      end
+    end
+  end
+end
