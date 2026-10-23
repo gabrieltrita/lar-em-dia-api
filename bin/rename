@@ -1,0 +1,18 @@
+#!/usr/bin/env ruby
+require "optparse"
+require_relative "../lib/app_renamer"
+
+options = {}
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/rename SLUG [--name NAME] [--domain DOMAIN]"
+  opts.on("--name NAME", "Display name (default: capitalized slug)") { |value| options[:name] = value }
+  opts.on("--domain DOMAIN", "Email domain (default: SLUG.dev)") { |value| options[:domain] = value }
+end
+
+begin
+  slug = parser.parse!(ARGV).first or abort(parser.help)
+  steps = AppRenamer.new(root: File.expand_path("..", __dir__), slug: slug, **options).call
+  puts "Renamed to #{slug}-api. Next steps:", steps.map { |step| "  - #{step}" }
+rescue AppRenamer::Error, OptionParser::ParseError => error
+  abort "bin/rename: #{error.message}"
+end

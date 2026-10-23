@@ -95,7 +95,8 @@ app/
   models/            User, RefreshToken, AuditLog, Consent, Current
   policies/          Pundit
   services/auth/     JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge
-lib/                 EnvValidator, rake tasks
+bin/rename           renames the app after forking (see App identity)
+lib/                 EnvValidator, AppRenamer, rake tasks
 config/app.yml       app identity (name, slug, domain)
 config/schedule.yml  sidekiq-cron schedule
 docs/                openapi.yaml, SECURITY.md
@@ -112,7 +113,9 @@ spec/                RSpec
 | `slug` | `trita` | JWT issuer (`trita-api`), refresh cookie (`trita_refresh`), database names (`trita_api_development`), Redis cache namespace, data export file name, Swagger page title |
 | `domain` | `trita.dev` | Default sender `no-reply@<domain>` and the seed users' emails |
 
-`slug` must contain only lowercase letters, digits and underscores, because it becomes part of database names. Code reads the values through `Rails.configuration.x.app`.
+`slug` must start with a letter and contain only lowercase letters and digits, because it becomes part of database, cookie, container and image names. Code reads the values through `Rails.configuration.x.app`.
+
+To rename the app after forking, run `bin/rename SLUG [--name NAME] [--domain DOMAIN]` (for example `bin/rename acme`, or `bin/rename minhaloja --name "Minha Loja" --domain minhaloja.com.br`). It rewrites `config/app.yml`, the `TritaApi` module, the Compose project and image names and every mention in `README.md`, `docs/` and `.claude/CLAUDE.md`, validates everything before writing, and prints the manual steps that remain (new secrets, security contact, git remotes, databases). Name defaults to the capitalized slug and domain to `SLUG.dev`.
 
 ## Production
 
