@@ -40,7 +40,7 @@ lib/env_validator.rb       production boot validation (EnvValidator)
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
 config/app.yml             app identity (name, slug, domain), read through Rails.configuration.x.app
 lib/tasks/encryption.rake  bin/rails encryption:reencrypt
-docs/openapi.yaml, docs/SECURITY.md
+docs/openapi.yaml, docs/SECURITY.md, docs/FORKING.md (how to start an app from this base)
 spec/                      models, requests, mailers, policies, services, controllers (production-only error handling), jobs, lib, tasks; helpers in spec/support (auth_helpers, sentry_helpers)
 ```
 
@@ -71,6 +71,7 @@ spec/                      models, requests, mailers, policies, services, contro
 
 - Never hardcode the app name, slug or domain in code, config, seeds or specs: read `Rails.configuration.x.app` (`name`, `slug`, `domain`). Only `config/app.yml` and the `TritaApi` module name may contain them.
 - `slug` is lowercase letters and digits only, starting with a letter. A new document that mentions the app name must be added to `AppRenamer::DOCUMENTS`, or `bin/rename` will leave it behind.
+- `docs/FORKING.md` is the exception: it names trita-api as the upstream base on purpose, so it is not in `AppRenamer::DOCUMENTS`. Keep it in sync when the fork workflow changes (rename, secrets, boot, merge conflicts).
 - Responses: `{ data, meta }`; errors through `render_error(status:, code:, message:, details:)` or the exceptions handled in `ErrorHandling`. Validation details: `{ field => [ { code, message } ] }`.
 - Serialization with Blueprinter; pagination with Pagy (`pagy(scope)` + `pagination_meta`, `limit` up to 100).
 - Controllers live under `Api::V1`; unauthenticated actions use `skip_before_action :authenticate_user!`.
