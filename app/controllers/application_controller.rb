@@ -12,6 +12,12 @@ class ApplicationController < ActionController::API
 
   private
 
+  def append_info_to_payload(payload)
+    super
+    payload[:request_id] = request.request_id
+    payload[:user_id] = current_user&.id
+  end
+
   def set_current_request
     Current.ip_address = request.remote_ip
     Current.user_agent = request.user_agent
