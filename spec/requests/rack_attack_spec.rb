@@ -44,6 +44,15 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
     end
   end
 
+  it "throttles the health check separately from the general limit" do
+    allow(HealthCheck).to receive(:call).and_return(status: "ok", checks: {})
+    60.times { get "/health", env: { "REMOTE_ADDR" => "10.4.4.4" } }
+    expect(response).to have_http_status(:ok)
+
+    get "/health", env: { "REMOTE_ADDR" => "10.4.4.4" }
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
   it "keeps the request body readable by Rails" do
     user = create(:user, email: "ok@example.com", password: "Senha@123")
     post "/api/v1/auth/login", params: { email: user.email, password: "Senha@123" }, as: :json
