@@ -1,0 +1,18 @@
+class <%= migration_class_name %> < ActiveRecord::Migration[<%= ActiveRecord::Migration.current_version %>]
+  def change
+    create_table :<%= table_name %>, id: :uuid do |t|
+      t.references :user, null: false, foreign_key: true, type: :uuid
+<% attributes.each do |attribute| -%>
+<% if attribute.type == :boolean -%>
+      t.boolean :<%= attribute.name %>, null: false, default: false
+<% else -%>
+      t.<%= attribute.type %> :<%= attribute.name %>, null: false
+<% end -%>
+<% end -%>
+
+      t.timestamps
+    end
+
+    add_index :<%= table_name %>, [ :user_id, :created_at ]
+  end
+end

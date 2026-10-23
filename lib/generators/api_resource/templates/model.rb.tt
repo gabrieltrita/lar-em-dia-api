@@ -1,0 +1,7 @@
+class <%= class_name %> < ApplicationRecord
+  belongs_to :user
+
+  validates <%= required_attributes.map { |attribute| ":#{attribute.name}" }.join(", ") %>, presence: true
+
+  scope :recent, -> { order(created_at: :desc) }
+end

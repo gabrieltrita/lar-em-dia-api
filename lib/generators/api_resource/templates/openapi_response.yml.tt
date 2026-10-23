@@ -1,0 +1,8 @@
+    <%= class_name %>:
+      description: <%= human_name %>
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/<%= class_name %>" }

@@ -1,0 +1,15 @@
+require "rails_helper"
+
+RSpec.describe <%= class_name %> do
+  it { is_expected.to belong_to(:user) }
+<% required_attributes.each do |attribute| -%>
+  it { is_expected.to validate_presence_of(:<%= attribute.name %>) }
+<% end -%>
+
+  it "lists the newest first" do
+    user = create(:user)
+    older = create(:<%= file_name %>, user: user, created_at: 2.days.ago)
+    newer = create(:<%= file_name %>, user: user)
+    expect(user.<%= plural_table_name %>.recent).to eq([ newer, older ])
+  end
+end

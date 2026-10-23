@@ -1,0 +1,63 @@
+  /<%= plural_table_name %>:
+    get:
+      tags: [<%= plural_class_name %>]
+      summary: List the current user's <%= plural_table_name.humanize(capitalize: false) %>, newest first
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of <%= plural_table_name.humanize(capitalize: false) %>
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/<%= class_name %>" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+    post:
+      tags: [<%= plural_class_name %>]
+      summary: Create a <%= human_name.downcase %>
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/<%= class_name %>Input" }
+      responses:
+        "201": { $ref: "#/components/responses/<%= class_name %>" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /<%= plural_table_name %>/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [<%= plural_class_name %>]
+      summary: Show a <%= human_name.downcase %>
+      description: Another user's record answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/<%= class_name %>" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [<%= plural_class_name %>]
+      summary: Update a <%= human_name.downcase %>
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/<%= class_name %>Input" }
+      responses:
+        "200": { $ref: "#/components/responses/<%= class_name %>" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [<%= plural_class_name %>]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/<%= class_name %>" }
+    delete:
+      tags: [<%= plural_class_name %>]
+      summary: Delete a <%= human_name.downcase %>
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
