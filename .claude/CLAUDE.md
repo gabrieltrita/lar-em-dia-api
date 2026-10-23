@@ -31,6 +31,7 @@ app/controllers/api/v1/me/     sessions, two_factor, consents
 app/controllers/api/v1/admin/  base (admin + 2FA required), users, audit_logs
 app/controllers/api/v1/notes_controller.rb  example domain module (Note, NotePolicy, NoteBlueprint); see docs/FORKING.md to remove it
 app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENABLE_API_DOCS=true)
+app/controllers/health_controller.rb GET /health (readiness, public); checks in app/services/health_check.rb
 app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
 app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Current
@@ -75,6 +76,7 @@ spec/                      models, requests, mailers, policies, services, contro
 
 ## Conventions
 
+- `/up` is liveness (process running, used by container healthchecks); `/health` is readiness (database, cache, Sidekiq). Only database or cache failures return 503; Sidekiq problems are `degraded` with 200. `/health` returns statuses only, never error details. A new critical dependency goes into `HealthCheck` with a spec for its failure.
 - Never hardcode the app name, slug or domain in code, config, seeds or specs: read `Rails.configuration.x.app` (`name`, `slug`, `domain`). Only `config/app.yml` and the `TritaApi` module name may contain them.
 - `slug` is lowercase letters and digits only, starting with a letter. A new document that mentions the app name must be added to `AppRenamer::DOCUMENTS`, or `bin/rename` will leave it behind.
 - `docs/FORKING.md` is the exception: it names trita-api as the upstream base on purpose, so it is not in `AppRenamer::DOCUMENTS`. Keep it in sync when the fork workflow changes (rename, secrets, boot, merge conflicts).
@@ -127,3 +129,6 @@ docker compose exec api bundle exec rspec
 - `config/environments/production.rb` must not set `config.logger` or `config.log_tags`: it would replace the JSON logger defined in `config/application.rb`.
 - In `config/initializers/sidekiq.rb` the JSON formatter is set before `config.redis`, or the Redis connection line is logged as text.
 - After adding gems, the running containers need `docker compose exec api bundle install` (or a restart); the entrypoint only installs on start.
+- `RedisCacheStore` swallows connection errors (reads miss, writes are dropped), so the cache check writes and reads back a unique key instead of waiting for an exception.
+- A stopped Sidekiq stays registered in `Sidekiq::ProcessSet` until its heartbeat expires (about a minute), so `/health` turns `degraded` with that delay.
+- `/up` and `/health` are excluded from `config.hosts` checks, the general `req/ip` throttle and lograge; keep that list in sync when adding infrastructure endpoints.
