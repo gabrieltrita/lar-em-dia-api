@@ -38,6 +38,7 @@ app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
 app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
+lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
 lib/generators/api_resource/  `bin/rails g api_resource Name field:type`: user-owned resource in the notes shape (templates in templates/*.tt)
 config/app.yml             app identity (name, slug, domain), read through Rails.configuration.x.app
@@ -70,6 +71,7 @@ spec/                      models, requests, mailers, policies, services, contro
 - New sensitive or unauthenticated endpoints get a Rack::Attack throttle in `config/initializers/rack_attack.rb` (the request body is JSON; use `json_param`).
 - Production refuses to boot without strong secrets (`EnvValidator`); add new required variables there and to `.env.example`.
 - Content a user creates (notes, orders, messages) is listed in `User::PERSONAL_DATA`: `UserDataExport` exports it under `content` with `<Model>Blueprint`, and `User#anonymize!` destroys it in the same transaction. Its personal columns are encrypted and filtered from logs.
+- Logs never carry personal data: no params, bodies, IPs, user agents, exception messages or job arguments (`JsonLogFormatter` logs only an exception's class; `config.active_job.log_arguments` is off with JSON logs). Identify requests by `request_id` and users by `user_id` (UUID). Free-text `Rails.logger` calls must not interpolate personal data.
 
 ## Conventions
 
@@ -100,6 +102,7 @@ docker compose exec api bundle exec rspec
 - Tests can run on the host against the compose Postgres (`.env` points to localhost). Rack::Attack is disabled in tests except in `spec/requests/rack_attack_spec.rb`; the test cache store is `:memory_store`.
 - Coverage report: `coverage/index.html` locally, `coverage` artifact in CI. `with_sentry` (spec/support/sentry_helpers.rb) initializes Sentry with an in-memory transport for specs that assert on reported errors.
 - API contract coverage report: `coverage/openapi_coverage.html` (also in the CI artifact). A partial run (`rspec spec/some_spec.rb`) fails both coverage gates on purpose; run the full suite before trusting a failure.
+- Logs: JSON in production (`config.x.json_logs`), text in development unless `LOG_FORMAT=json`. Request lines come from lograge (`config/initializers/lograge.rb`) with `request_id`/`user_id` added in `ApplicationController#append_info_to_payload`; Sidekiq uses its own JSON formatter.
 
 ## Gotchas
 
@@ -121,3 +124,6 @@ docker compose exec api bundle exec rspec
 - `oneOf` in the OpenAPI spec needs mutually exclusive variants (use `required` fields), or valid responses fail validation; see `SessionResponse`/`TwoFactorChallengeResponse`.
 - `openapi_first` tolerates undocumented 401/404/500 on any route and ignores paths outside `/api/v1/` (`/docs`, `/up`, `/sidekiq`). Requests are not validated strictly, so specs can still send invalid input on purpose.
 - The `api_resource` templates produce specs that exercise every response they document; keep that true when editing them.
+- `config/environments/production.rb` must not set `config.logger` or `config.log_tags`: it would replace the JSON logger defined in `config/application.rb`.
+- In `config/initializers/sidekiq.rb` the JSON formatter is set before `config.redis`, or the Redis connection line is logged as text.
+- After adding gems, the running containers need `docker compose exec api bundle install` (or a restart); the entrypoint only installs on start.

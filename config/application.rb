@@ -10,6 +10,8 @@ require "action_view/railtie"
 
 Bundler.require(*Rails.groups)
 
+require_relative "../lib/json_log_formatter"
+
 module TritaApi
   class Application < Rails::Application
     config.load_defaults 8.1
@@ -19,6 +21,11 @@ module TritaApi
     config.api_only = true
 
     config.x.app = config_for(:app)
+
+    config.x.json_logs = Rails.env.production? || ENV["LOG_FORMAT"] == "json"
+    config.logger = ActiveSupport::Logger.new($stdout, formatter: JsonLogFormatter.new) if config.x.json_logs
+    config.colorize_logging = false if config.x.json_logs
+    config.active_job.log_arguments = !config.x.json_logs
 
     config.middleware.use ActionDispatch::Cookies
 

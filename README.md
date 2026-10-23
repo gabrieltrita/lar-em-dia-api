@@ -129,6 +129,16 @@ Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (re
 
 The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`.
 
+Logs go to stdout as one JSON object per line. Each request is a single line (lograge) with `time`, `level`, `method`, `path`, `controller`, `action`, `status`, `duration`, `db`, `view`, `request_id`, `user_id` and, on errors, the exception class:
+
+```json
+{"time":"2026-10-23T16:50:34.216Z","level":"INFO","method":"POST","path":"/api/v1/notes","controller":"Api::V1::NotesController","action":"create","status":201,"duration":59.98,"db":8.37,"view":0.13,"request_id":"263d77c3-…","user_id":"2ef8b383-…"}
+```
+
+Other lines carry `message` (or `error` with the exception class). Request parameters, bodies, IPs, user agents, exception messages and job arguments are never logged; `request_id` links a line to the audit log and to Sentry. `/up` is not logged. Sidekiq logs JSON too, with its own keys (`ts`, `lvl`, `msg`, `ctx` with the job class, id and duration). Set `RAILS_LOG_LEVEL` to change the level (default `info`).
+
+In development logs stay human-readable; set `LOG_FORMAT=json` to see the production format.
+
 ---
 
 ## Features and how to use them
@@ -302,9 +312,11 @@ Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. 
 
 `MaintenanceCleanupJob` runs daily at 03:00 (São Paulo) via sidekiq-cron (`config/schedule.yml`): deletes expired refresh tokens and sign-ups unconfirmed for more than 7 days. Scheduled jobs are visible in the Sidekiq dashboard (basic auth with `SIDEKIQ_WEB_USERNAME` / `SIDEKIQ_WEB_PASSWORD`).
 
-### 15. Error monitoring
+### 15. Error monitoring and logs
 
 Set `SENTRY_DSN` to enable Sentry for Rails and Sidekiq. Only the user id is sent; request bodies, cookies, query strings and auth headers are stripped.
+
+Logs are structured JSON in production with no personal data (see "Production"). Find everything about one request by its `request_id`, which is also returned in the `X-Request-Id` response header, stored in audit log entries and attached to Sentry events.
 
 ### 16. Notes (example domain module)
 
