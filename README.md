@@ -139,6 +139,15 @@ Other lines carry `message` (or `error` with the exception class). Request param
 
 In development logs stay human-readable; set `LOG_FORMAT=json` to see the production format.
 
+Two health endpoints, both public and outside `/api/v1`:
+
+| Endpoint | Meaning | Use it for |
+|---|---|---|
+| `GET /up` | The Rails process is running (liveness) | Container healthchecks and restarts (docker-compose uses it) |
+| `GET /health` | The app can serve requests (readiness): Postgres, Redis cache and Sidekiq | Load balancers, uptime monitors, deploy checks |
+
+`/health` answers `{"status":"ok","checks":{"database":"ok","cache":"ok","sidekiq":"ok"}}`. A failing database or cache makes it `down` with **503**; Sidekiq without processes, or a queue waiting more than 5 minutes, makes it `degraded` with **200**, because the API still serves requests and only background work is delayed. It never returns error details, is throttled to 60 requests per minute per IP, is allowed for any `Host` and is not logged.
+
 ---
 
 ## Features and how to use them
@@ -314,7 +323,7 @@ Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. 
 
 ### 15. Error monitoring and logs
 
-Set `SENTRY_DSN` to enable Sentry for Rails and Sidekiq. Only the user id is sent; request bodies, cookies, query strings and auth headers are stripped.
+Set `SENTRY_DSN` to enable Sentry for Rails and Sidekiq. Events carry the exception class, the stacktrace, the request method, URL path and safe headers, the `request_id` tag, the user id and breadcrumbs of what ran before the error (controller, timings, cache hits and SQL statement names). They never carry exception or manual messages (replaced by `[FILTERED]`), request bodies, query strings, cookies, `Authorization`, `X-Token-Transport`, `User-Agent`, the client IP, SQL text, cache keys (Rack::Attack keys contain emails) or Sidekiq job arguments. The policy lives in `lib/sentry_config.rb` and is covered by specs.
 
 Logs are structured JSON in production with no personal data (see "Production"). Find everything about one request by its `request_id`, which is also returned in the `X-Request-Id` response header, stored in audit log entries and attached to Sentry events.
 
@@ -345,3 +354,7 @@ bin/rails g api_resource Product name:string price:decimal active:boolean
 Generates a resource owned by the current user in the shape of the notes example: migration (UUID key, `user_id`, `null: false` columns, list index), model, policy (owner only, 404 for anyone else), blueprint, paginated CRUD controller, the route in `config/routes/app.rb`, the OpenAPI tag, paths, schemas and response, a factory and request, model and policy specs. The generated code passes the suite at 100% line and branch coverage and RuboCop.
 
 Supported types: `string`, `text`, `integer`, `float`, `decimal`, `boolean`, `date`, `datetime`. At least one attribute must not be boolean; namespaced names are rejected. Afterwards the generator prints the manual steps: add `has_many` to `User`, and for personal data switch the columns to `text`, add `encrypts`, filter them from logs and list the association in `User::PERSONAL_DATA`.
+
+### 18. Health checks
+
+`GET /health` reports whether the database, the cache and Sidekiq are working (see "Production" for statuses, HTTP codes and where to use it, and `/up` for liveness).

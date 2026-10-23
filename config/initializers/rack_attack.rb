@@ -35,7 +35,11 @@ class Rack::Attack
   end
 
   throttle("req/ip", limit: 300, period: 5.minutes) do |req|
-    req.ip unless req.path == "/up"
+    req.ip unless %w[/up /health].include?(req.path)
+  end
+
+  throttle("health/ip", limit: 60, period: 1.minute) do |req|
+    req.ip if req.path == "/health"
   end
 
   throttle("auth/login/ip", limit: 10, period: 1.minute) do |req|

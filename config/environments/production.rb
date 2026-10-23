@@ -20,7 +20,7 @@ Rails.application.configure do
   config.active_support.report_deprecations = false
 
   config.hosts = ENV.fetch("APP_HOSTS", "").split(",").map(&:strip)
-  config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+  config.host_authorization = { exclude: ->(request) { %w[/up /health].include?(request.path) } }
 
   config.cache_store = :redis_cache_store, { url: ENV.fetch("REDIS_URL"), namespace: config.x.app.slug }
 

@@ -7,7 +7,7 @@
 3. **Client-facing errors carry a stable `code`.** The front end (trita-web) translates by `error.code` and `details[field][].code`, never by message text. Add every new code to the table in `docs/openapi.yaml`.
 4. **The API matches `docs/openapi.yaml`.** Every route is documented (`spec/requests/docs_spec.rb`), every response under `/api/v1` is validated against its documented status and schema during request specs, and 100% of the documented responses must be exercised by some spec (`openapi_first`, `spec/support/openapi.rb`). Change the schema together with the response, and add a spec for every status you document.
 5. **Keep the suite green**: `bundle exec rspec` (fails below 100% line or branch coverage), `bin/rubocop`, `bin/brakeman --no-pager`, `bin/bundler-audit`. CI runs all four.
-6. Work on a feature branch and open a PR to `main` (repo `gabrieltrita/trita-api`, remote via the `github-gabrieltrita` SSH alias, commits authored with `g.trita.f@gmail.com`).
+6. Branch from `dev` and open every PR against `dev` (`gh pr create --base dev`); never against `main`. `main` only receives `dev` when the owner promotes it. Repo `gabrieltrita/trita-api`, remote via the `github-gabrieltrita` SSH alias, commits authored with `g.trita.f@gmail.com`.
 7. **Plan before every change, then go file by file.** Before modifying, adding or removing any file, present the plan and wait for the owner's explicit approval: the files to modify, add and remove; the changes in each; why; other possible implementations described in prose (no code); and the recommended one. After the plan is approved, show a preview of each file's exact change (diff, or full content for a new file) with its explanation and wait for approval of that file before writing it. Approval covers only what was presented; anything else needs a new round. Exception: spec files (`spec/**`) covered by an approved plan can be written without a per-file preview. Read-only investigation needs no approval.
 8. **100% test coverage, never less.** SimpleCov (`.simplecov`) enforces 100% line and 100% branch coverage in `bundle exec rspec` and in CI. Every change ships with the specs that keep it at 100%. Never lower the thresholds or add filters, `skip` entries or `:nocov:` to reach them; delete dead code instead, and only remove an unreachable defensive branch with the owner's approval.
 9. **Never merge pull requests.** Open the PR, push and report the CI status; the owner always merges. Never run `gh pr merge` or enable auto-merge, including for Dependabot PRs.
@@ -31,6 +31,7 @@ app/controllers/api/v1/me/     sessions, two_factor, consents
 app/controllers/api/v1/admin/  base (admin + 2FA required), users, audit_logs
 app/controllers/api/v1/notes_controller.rb  example domain module (Note, NotePolicy, NoteBlueprint); see docs/FORKING.md to remove it
 app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENABLE_API_DOCS=true)
+app/controllers/health_controller.rb GET /health (readiness, public); checks in app/services/health_check.rb
 app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
 app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Current
@@ -39,6 +40,7 @@ app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, Token
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
 lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
+lib/sentry_config.rb       Sentry privacy policy (SentryConfig.apply / .scrub)
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
 lib/generators/api_resource/  `bin/rails g api_resource Name field:type`: user-owned resource in the notes shape (templates in templates/*.tt)
 config/app.yml             app identity (name, slug, domain), read through Rails.configuration.x.app
@@ -72,9 +74,11 @@ spec/                      models, requests, mailers, policies, services, contro
 - Production refuses to boot without strong secrets (`EnvValidator`); add new required variables there and to `.env.example`.
 - Content a user creates (notes, orders, messages) is listed in `User::PERSONAL_DATA`: `UserDataExport` exports it under `content` with `<Model>Blueprint`, and `User#anonymize!` destroys it in the same transaction. Its personal columns are encrypted and filtered from logs.
 - Logs never carry personal data: no params, bodies, IPs, user agents, exception messages or job arguments (`JsonLogFormatter` logs only an exception's class; `config.active_job.log_arguments` is off with JSON logs). Identify requests by `request_id` and users by `user_id` (UUID). Log a Hash of safe fields (`Rails.logger.error({ error: e.class.name, ... })`), never an exception message or interpolated values.
+- Sentry events never carry personal data. `lib/sentry_config.rb` is the single policy (used by the initializer and by `with_sentry` in specs): `send_default_pii = false`, no client IP, no `Authorization`/`Cookie`/`X-Token-Transport`/`User-Agent` headers, exception and manual messages replaced by `[FILTERED]`, no SQL text or cache keys in breadcrumbs, no Sidekiq job arguments, user reduced to its id. New personal headers, breadcrumb fields or contexts go there, with a spec.
 
 ## Conventions
 
+- `/up` is liveness (process running, used by container healthchecks); `/health` is readiness (database, cache, Sidekiq). Only database or cache failures return 503; Sidekiq problems are `degraded` with 200. `/health` returns statuses only, never error details. A new critical dependency goes into `HealthCheck` with a spec for its failure.
 - Never hardcode the app name, slug or domain in code, config, seeds or specs: read `Rails.configuration.x.app` (`name`, `slug`, `domain`). Only `config/app.yml` and the `TritaApi` module name may contain them.
 - `slug` is lowercase letters and digits only, starting with a letter. A new document that mentions the app name must be added to `AppRenamer::DOCUMENTS`, or `bin/rename` will leave it behind.
 - `docs/FORKING.md` is the exception: it names trita-api as the upstream base on purpose, so it is not in `AppRenamer::DOCUMENTS`. Keep it in sync when the fork workflow changes (rename, secrets, boot, merge conflicts).
@@ -100,7 +104,7 @@ docker compose exec api bundle exec rspec
 - Compose names containers `<project>-<service>-1` (for example `trita-api-1`); always address services by name (`docker compose exec api`). The Redis cache (JWT denylist, Rack::Attack) is namespaced by `slug`; Sidekiq does not support namespaces, so apps sharing a Redis need separate databases or instances.
 - Redis requires `REDIS_PASSWORD`; it must also appear in `REDIS_URL` and `SIDEKIQ_REDIS_URL`.
 - Tests can run on the host against the compose Postgres (`.env` points to localhost). Rack::Attack is disabled in tests except in `spec/requests/rack_attack_spec.rb`; the test cache store is `:memory_store`.
-- Coverage report: `coverage/index.html` locally, `coverage` artifact in CI. `with_sentry` (spec/support/sentry_helpers.rb) initializes Sentry with an in-memory transport for specs that assert on reported errors.
+- Coverage report: `coverage/index.html` locally, `coverage` artifact in CI. `with_sentry` (spec/support/sentry_helpers.rb) initializes Sentry with the real `SentryConfig`, an in-memory transport and the breadcrumbs logger; `sentry_payload(event)` serializes an event without stacktrace source lines, so leak assertions are not fooled by literals in the spec file itself.
 - API contract coverage report: `coverage/openapi_coverage.html` (also in the CI artifact). A partial run (`rspec spec/some_spec.rb`) fails both coverage gates on purpose; run the full suite before trusting a failure.
 - Logs: JSON in production (`config.x.json_logs`), text in development unless `LOG_FORMAT=json`. Request lines come from lograge (`config/initializers/lograge.rb`) with `request_id`/`user_id` added in `ApplicationController#append_info_to_payload`; Sidekiq uses its own JSON formatter.
 
@@ -127,3 +131,8 @@ docker compose exec api bundle exec rspec
 - `config/environments/production.rb` must not set `config.logger` or `config.log_tags`: it would replace the JSON logger defined in `config/application.rb`.
 - In `config/initializers/sidekiq.rb` the JSON formatter is set before `config.redis`, or the Redis connection line is logged as text.
 - After adding gems, the running containers need `docker compose exec api bundle install` (or a restart); the entrypoint only installs on start.
+- `RedisCacheStore` swallows connection errors (reads miss, writes are dropped), so the cache check writes and reads back a unique key instead of waiting for an exception.
+- A stopped Sidekiq stays registered in `Sidekiq::ProcessSet` until its heartbeat expires (about a minute), so `/health` turns `degraded` with that delay.
+- `/up` and `/health` are excluded from `config.hosts` checks, the general `req/ip` throttle and lograge; keep that list in sync when adding infrastructure endpoints.
+- Sentry 7 with `send_default_pii = false` never collects request bodies, query strings or cookies, but it does send `User-Agent` and `REMOTE_ADDR` unless `SentryConfig` removes them; the scrubbing specs prove both, so a Sentry upgrade that changes this fails CI.
+- The ActiveSupport breadcrumbs logger is injected by sentry-rails only at boot; specs inject and detach it inside `with_sentry`.
