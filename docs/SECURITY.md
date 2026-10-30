@@ -96,6 +96,8 @@ Change the value, restart the services that use it, and rotate any copy in CI or
 - [ ] `.kamal/secrets` holds only references to environment variables, never values
 - [ ] Postgres and Redis run as Kamal accessories with no published ports
 - [ ] The `ghcr.io` token only has `write:packages`
+- [ ] The deploy key is dedicated to CI, belongs to a non-root user, and the server's host key was verified before it went into `DEPLOY_SSH_KNOWN_HOSTS`
+- [ ] Production only deploys from a version tag on `main`; workflow permissions stay at `contents: read` plus `packages: write` for the deploy jobs
 - [ ] Staging uses its own secrets (`STAGING_*`), never the production ones, and is the only environment with `ENABLE_API_DOCS=true`
 
 ## Reporting a vulnerability
