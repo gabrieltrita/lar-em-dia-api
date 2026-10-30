@@ -178,6 +178,28 @@ Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes. Database b
 
 Kamal does not warn about a secret that was not exported: it reaches the container empty, `EnvValidator` refuses to boot, the health check fails and the deploy stops with the previous version still running.
 
+### Continuous deployment
+
+`.github/workflows/deploy.yml` runs the CI and then deploys: a push to `main` goes to **staging**, and a version tag (`0.3.0`, no `v`) goes to **production**, only if the tagged commit is on `main`. Production has no other gate, so creating the tag is the approval. A job is skipped when its server is not configured (`DEPLOY_HOST` for production, `STAGING_DEPLOY_HOST` for staging). Images are pushed to `ghcr.io` with the workflow token, so no registry token is stored; if the package was first created with a personal token, give this repository access to it in the package settings.
+
+The first `bin/kamal setup` of each environment is manual (from your machine, as a user that can install Docker); the workflow only runs `bin/kamal deploy`.
+
+Repository variables (Settings, Secrets and variables, Actions): `DEPLOY_HOST`, `DEPLOY_SSH_USER`, `APP_HOST`, `CORS_ORIGINS`, `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS` and the optional `DEPLOY_ARCH`, `SMTP_PORT`, `GOOGLE_CLIENT_IDS`, `APPLE_CLIENT_IDS`. Staging uses the same names with the `STAGING_` prefix.
+
+Repository secrets: the ones listed under "Deploying with Kamal" (production, plain names), the same with the `STAGING_` prefix for staging, and for each environment `DEPLOY_SSH_PRIVATE_KEY` and `DEPLOY_SSH_KNOWN_HOSTS` (`STAGING_DEPLOY_SSH_PRIVATE_KEY`, `STAGING_DEPLOY_SSH_KNOWN_HOSTS`).
+
+Deploy user on the server (once per server):
+
+```bash
+adduser --disabled-password --gecos "" deploy
+usermod -aG docker deploy
+install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
+```
+
+On your machine: `ssh-keygen -t ed25519 -N "" -C ci-deploy -f deploy_key`, append `deploy_key.pub` to `/home/deploy/.ssh/authorized_keys`, run `ssh-keyscan -t ed25519 <host> > known_hosts` and check its fingerprint against `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server, then `gh secret set DEPLOY_SSH_PRIVATE_KEY < deploy_key` and `gh secret set DEPLOY_SSH_KNOWN_HOSTS < known_hosts` (and delete the local files). Set `DEPLOY_SSH_USER` to `deploy`. Members of the `docker` group are root-equivalent on that server, so use a key that is only for this.
+
+Releasing: promote `dev` with a `release/YYYY-MM-DD` branch and a PR to `main`; the merge deploys staging; when staging looks right, `git tag 0.3.0 origin/main && git push origin 0.3.0` deploys production. Database backups arrive with phase 4.4.
+
 ## Features and how to use them
 
 All paths below are relative to `/api/v1`. Authenticated calls send `Authorization: Bearer <access_token>`.
