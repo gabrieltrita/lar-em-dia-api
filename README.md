@@ -127,7 +127,7 @@ Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (re
 
 `Dockerfile` (multi-stage, non-root) is for production; `Dockerfile.dev` is used by docker-compose.
 
-The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login), `APPLE_CLIENT_IDS` (comma-separated Apple identifiers: the app's bundle id and the web Services ID; empty disables Apple login), `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` (the Sign in with Apple key: team id, key id and the contents of the `.p8` file with `\n` instead of line breaks; all three or none, used to revoke the Apple token when an account is deleted).
+The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `SECRET_KEY_BASE` (64+, `bin/rails secret`), `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login), `APPLE_CLIENT_IDS` (comma-separated Apple identifiers: the app's bundle id and the web Services ID; empty disables Apple login), `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` (the Sign in with Apple key: team id, key id and the contents of the `.p8` file with `\n` instead of line breaks; all three or none, used to revoke the Apple token when an account is deleted).
 
 Logs go to stdout as one JSON object per line. Each request is a single line (lograge) with `time`, `level`, `method`, `path`, `controller`, `action`, `status`, `duration`, `db`, `view`, `request_id`, `user_id` and, on errors, the exception class:
 
@@ -149,6 +149,22 @@ Two health endpoints, both public and outside `/api/v1`:
 `/health` answers `{"status":"ok","checks":{"database":"ok","cache":"ok","sidekiq":"ok"}}`. A failing database or cache makes it `down` with **503**; Sidekiq without processes, or a queue waiting more than 5 minutes, makes it `degraded` with **200**, because the API still serves requests and only background work is delayed. It never returns error details, is throttled to 60 requests per minute per IP, is allowed for any `Host` and is not logged.
 
 ---
+
+### Deploying with Kamal
+
+`config/deploy.yml` runs the API (`web`) and Sidekiq (`job`) behind kamal-proxy with automatic TLS, plus Postgres 17 and Redis 7 as accessories on the same server, with no published ports. The app name comes from `config/app.yml`; everything specific to your server comes from the environment of the machine that runs `bin/kamal`, never from the repository.
+
+Before the first deploy: an Ubuntu server reachable by SSH key with ports 80 and 443 open, a DNS A record for the API host, and a GitHub token with `write:packages` (images go to `ghcr.io`).
+
+Variables to export (shell or password manager; `.kamal/secrets` only holds references to them, never write a value in it): `DEPLOY_HOST`, `DEPLOY_SSH_USER` (default `root`), `DEPLOY_ARCH` (default `amd64`), `APP_HOST`, `KAMAL_REGISTRY_USERNAME`, `KAMAL_REGISTRY_PASSWORD`, `CORS_ORIGINS`, `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SMTP_USERNAME`, `SMTP_PASSWORD`, every secret listed in the production section above, `POSTGRES_PASSWORD` and `REDIS_PASSWORD`, plus the optional ones (`SENTRY_DSN`, `GOOGLE_CLIENT_IDS`, `APPLE_*`). The connection strings carry the passwords, so you build them:
+
+- `DATABASE_URL`: `postgres://postgres:<POSTGRES_PASSWORD>@<slug>-api-db:5432/<slug>_api_production`
+- `REDIS_URL`: `redis://:<REDIS_PASSWORD>@<slug>-api-redis:6379/1`
+- `SIDEKIQ_REDIS_URL`: the same with `/0`
+
+Commands: `bin/kamal setup` the first time (installs Docker, boots the accessories, the proxy and the app), `bin/kamal deploy` afterwards, `bin/kamal rollback VERSION`, and the aliases `bin/kamal console`, `shell`, `logs` and `dbc`. The web container runs `db:prepare` on start, so migrations apply on every deploy.
+
+Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes. Database backups arrive with phase 4.4; until then take `pg_dump` by hand.
 
 ## Features and how to use them
 
