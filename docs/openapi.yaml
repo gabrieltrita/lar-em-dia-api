@@ -382,6 +382,8 @@ paths:
               properties:
                 current_password: { type: string, description: "Required when password_set is true" }
                 code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
+                apple_authorization_code: { type: string, description: "Fresh code from Sign in with Apple; when the user has an Apple identity the Apple token is revoked (best effort, never blocks the deletion)" }
+                apple_client_id: { type: string, description: "Bundle id or Services ID that produced the code; defaults to the first of APPLE_CLIENT_IDS" }
       responses:
         "204": { description: Account anonymized }
         "422": { $ref: "#/components/responses/ReauthenticationFailed" }

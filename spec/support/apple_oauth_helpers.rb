@@ -47,3 +47,27 @@ RSpec.shared_context "with apple oauth" do
 
   before { stub_apple_jwks }
 end
+
+RSpec.shared_context "with apple revocation" do
+  include_context "with apple oauth"
+
+  let(:apple_signing_key) { OpenSSL::PKey::EC.generate("prime256v1") }
+  let(:apple_token_url) { Auth::Oauth::AppleRevoker::TOKEN_URI.to_s }
+  let(:apple_revoke_url) { Auth::Oauth::AppleRevoker::REVOKE_URI.to_s }
+
+  around do |example|
+    keys = %w[APPLE_TEAM_ID APPLE_KEY_ID APPLE_PRIVATE_KEY]
+    originals = keys.index_with { |key| ENV[key] }
+    ENV["APPLE_TEAM_ID"] = "TEAM123456"
+    ENV["APPLE_KEY_ID"] = "KEY1234567"
+    ENV["APPLE_PRIVATE_KEY"] = apple_signing_key.to_pem.gsub("\n", "\\n")
+    example.run
+  ensure
+    originals.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  before do
+    stub_request(:post, apple_token_url).to_return(status: 200, body: { refresh_token: "apple-refresh-token" }.to_json)
+    stub_request(:post, apple_revoke_url).to_return(status: 200, body: "")
+  end
+end

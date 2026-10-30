@@ -11,6 +11,7 @@ class EnvValidator
   MIN_JWT_SECRET = 64
   MIN_ENCRYPTION_KEY = 32
   MIN_SIDEKIQ_PASSWORD = 16
+  APPLE_REVOCATION_KEYS = %w[APPLE_TEAM_ID APPLE_KEY_ID APPLE_PRIVATE_KEY].freeze
 
   def self.validate!(env = ENV)
     errors = new(env).errors
@@ -43,6 +44,11 @@ class EnvValidator
     origins = @env["CORS_ORIGINS"].to_s.split(",").map(&:strip)
     errors << "CORS_ORIGINS must not contain *" if origins.include?("*")
     errors << "CORS_ORIGINS must use https in production" if origins.any? { |o| !o.start_with?("https://") }
+
+    apple_missing = APPLE_REVOCATION_KEYS.select { |key| blank?(key) }
+    if apple_missing.any? && apple_missing.size < APPLE_REVOCATION_KEYS.size
+      errors << "#{APPLE_REVOCATION_KEYS.join(', ')} must be set together (missing: #{apple_missing.join(', ')})"
+    end
 
     errors
   end
