@@ -36,7 +36,7 @@ app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
 app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current
 app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
-app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, OauthSignin, oauth/GoogleVerifier, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed/ProviderUnavailable
+app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, OauthSignin, oauth/GoogleVerifier, oauth/Providers, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed/ProviderUnavailable
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
 lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
@@ -67,10 +67,11 @@ spec/                      models, requests, mailers, policies, services, contro
 - Mail jobs receive only the user (GlobalID). Tokens are generated inside `UserMailer`, never passed through `deliver_later`, Redis or logs.
 - Roles are read from the database, never from the token. Authorization goes through Pundit; admins cannot change their own role or delete themselves.
 - Any password change goes through the `User` callbacks that revoke every session, audit and email the owner. Do not bypass them with `update_columns` on `password_digest` (except `anonymize!`).
-- Sensitive actions re-authenticate with `require_reauthentication!` (the current password, or the 2FA code when the account has no password) and, when 2FA is on, `require_second_factor!`. The code is verified only once per request, because a TOTP code works once.
+- Sensitive actions re-authenticate with `require_reauthentication!` (the current password; for accounts without a password the 2FA code or a fresh ID token of an identity already linked to the account) and, when 2FA is on, `require_second_factor!`. The code is verified only once per request, because a TOTP code works once.
 - Accounts can have no password (`password_digest` is nullable; `User#password_set?`). Any code that reads `password_digest` or `password_salt` must handle `nil`, and a user needs a password or an identity (`login_methods_count`). Never remove the last login method.
 - `Identity#provider_uid` is encrypted deterministically, filtered from logs, and never returned by the API or the export.
 - Social login accepts only a verified provider ID token (signature, issuer, audience, expiry, `email_verified`); never trust an email or uid sent by the client. Linking an identity to an unconfirmed account discards its password and sessions first. Third-party HTTP calls have short timeouts, their failures answer 503, and logs carry only the exception class.
+- Adding a social provider means one entry in `Auth::Oauth::Providers::VERIFIERS` plus its verifier. A provider token only counts as re-authentication when its `sub` matches an identity of the current user, and never for `POST /me/identities`, where the token is the account being linked.
 - Account deletion is anonymization (`User#anonymize!`), never a hard delete, so the audit trail stays consistent.
 - `AuditLog` and `Consent` rows are immutable (`readonly?`). Record sensitive events with `AuditLog.record!(action, target:, actor:, metadata:)`; `metadata` never holds personal data and `action` must be in `AuditLog::ACTIONS`.
 - New sensitive or unauthenticated endpoints get a Rack::Attack throttle in `config/initializers/rack_attack.rb` (the request body is JSON; use `json_param`).

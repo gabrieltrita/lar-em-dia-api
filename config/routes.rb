@@ -36,7 +36,7 @@ Rails.application.routes.draw do
         scope module: :me do
           resources :sessions, only: %i[index destroy]
           resources :consents, only: %i[index create]
-          resources :identities, only: %i[index destroy]
+          resources :identities, only: %i[index create destroy]
           resource :two_factor, only: %i[show destroy], controller: :two_factor do
             post :setup
             post :enable
