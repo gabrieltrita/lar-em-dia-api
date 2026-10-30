@@ -90,12 +90,12 @@ app/
   controllers/
     concerns/        Authenticatable, TokenResponder, ErrorHandling, Paginatable
     api/v1/auth/     register, confirm, login, two_factor, refresh, logout, passwords
-    api/v1/me/       sessions, two_factor, consents
+    api/v1/me/       sessions, two_factor, consents, identities
     api/v1/admin/    users, audit_logs
     api/v1/notes_controller.rb   example domain module (see feature 16)
   jobs/              MaintenanceCleanupJob
   mailers/           UserMailer
-  models/            User, RefreshToken, AuditLog, Consent, Current, Note (example)
+  models/            User, RefreshToken, AuditLog, Consent, Identity, Current, Note (example)
   policies/          Pundit
   services/auth/     JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge
 bin/rename           renames the app after forking (see App identity)
@@ -127,7 +127,7 @@ Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (re
 
 `Dockerfile` (multi-stage, non-root) is for production; `Dockerfile.dev` is used by docker-compose.
 
-The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`.
+The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login), `APPLE_CLIENT_IDS` (comma-separated Apple identifiers: the app's bundle id and the web Services ID; empty disables Apple login), `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` (the Sign in with Apple key: team id, key id and the contents of the `.p8` file with `\n` instead of line breaks; all three or none, used to revoke the Apple token when an account is deleted).
 
 Logs go to stdout as one JSON object per line. Each request is a single line (lograge) with `time`, `level`, `method`, `path`, `controller`, `action`, `status`, `duration`, `db`, `view`, `request_id`, `user_id` and, on errors, the exception class:
 
@@ -298,7 +298,7 @@ Name and phone are encrypted non-deterministically, so the user list can only fi
 
 ### 11. Audit log
 
-Every sensitive event is recorded with actor, target, IP, user agent and request id (IP and user agent encrypted): logins and failures, lockouts, logouts, token reuse, registration, confirmation, role, password and email changes, 2FA changes, session revocations, consents, exports and anonymizations. Records are immutable and never contain personal data in `metadata`. Query them at `GET /admin/audit_logs`.
+Every sensitive event is recorded with actor, target, IP, user agent and request id (IP and user agent encrypted): logins and failures, lockouts, logouts, token reuse, registration, confirmation, role, password and email changes, 2FA changes, session revocations, identity unlinks, consents, exports and anonymizations. Records are immutable and never contain personal data in `metadata`. Query them at `GET /admin/audit_logs`.
 
 ### 12. Privacy (LGPD)
 
@@ -358,3 +358,54 @@ Supported types: `string`, `text`, `integer`, `float`, `decimal`, `boolean`, `da
 ### 18. Health checks
 
 `GET /health` reports whether the database, the cache and Sidekiq are working (see "Production" for statuses, HTTP codes and where to use it, and `/up` for liveness).
+
+### 19. Social identities and passwordless accounts
+
+An account can be linked to Google or Apple identities and can have no password at all.
+
+```http
+GET    /me/identities                                   -> linked providers (id, provider, email_at_link, created_at)
+POST   /me/identities { "provider": "google", "id_token": "...", "current_password": "..." } -> 201
+DELETE /me/identities/:id { "current_password": "..." } -> 204
+```
+
+- `GET /me` returns `password_set`; the front end uses it to offer "set a password" instead of "change password".
+- Sensitive actions (`PATCH /me/password`, `PATCH /me/email`, `DELETE /me`, 2FA setup, disable and backup codes, unlinking an identity) re-authenticate with `current_password` when the account has a password. Accounts without a password send the 2FA `code` instead, or a fresh provider ID token (`provider` + `id_token`) of an account already linked to them. An account with none of these gets `reauthentication_unavailable` (422). A wrong token or one that belongs to another account gets `invalid_provider_token` (422), and `provider_unavailable` (422) means the provider could not be reached, so retry.
+- `PATCH /me/password` also sets the first password of a passwordless account.
+- `POST /me/identities` links a provider account while logged in, even when its email differs from the user's. It re-authenticates with the password or the 2FA code only, because `id_token` is the account being linked; an account that only has Google and no 2FA first sets a password or enables 2FA (both accept the provider token). A provider account can belong to one user, and a user can have one account per provider: otherwise `identity_already_linked` (422).
+- The only way to log in cannot be removed: the request fails with `last_login_method` (422).
+- Each user can link one identity per provider, and a provider account can belong to one user. The provider's user id is encrypted deterministically (lookup and unique index) and is never returned by the API or the data export; the linked email is encrypted too.
+- Identities are listed in `User::PERSONAL_DATA`: they appear in the data export under `content.identities` and are destroyed on anonymization. Unlinking is audited as `identity.unlinked`.
+
+#### Login with Google
+
+```http
+POST /auth/oauth/google { "id_token": "...", "accept_terms": true, "accept_privacy": true, "accept_marketing": false }
+```
+
+The front end (Google Identity Services on the web, the SDK on mobile) obtains the Google **ID token** and sends it here; the API never redirects. The API checks the signature against Google's keys (cached), the issuer, that the audience is one of `GOOGLE_CLIENT_IDS`, the expiry and that the email is verified. The response is the same as the password login (body or cookie mode).
+
+- Known Google account: logs in.
+- Same email as a confirmed account: the identity is linked, the owner is emailed and audited as `identity.linked`.
+- Same email as an **unconfirmed** account (possible pre-registration by someone else): the identity is linked, the password and every session of that account are discarded and the email is marked confirmed.
+- New email: creates a confirmed account without a password. `accept_terms` and `accept_privacy` are required in this case only (`validation_failed`, `details.accept_terms[].code = required`).
+- 2FA still applies: an account with 2FA gets the usual `challenge_token`.
+- Errors: `oauth_token_invalid` (401), `oauth_email_unverified` (401), `oauth_provider_unavailable` (503, Google's keys could not be fetched). Throttled to 10 requests per minute per IP.
+
+#### Login with Apple
+
+```http
+POST /auth/oauth/apple { "id_token": "...", "first_name": "...", "last_name": "...", "accept_terms": true, "accept_privacy": true }
+```
+
+Same flow, rules and errors as Google, with the Apple identity token. Differences:
+
+- Apple does not put the name in the token. It hands it to the app only on the first authorization, so the client sends `first_name` and `last_name` in the body; they are used only when the account is created and only when the token has no name (the token always wins).
+- The user may hide the email: the account is then created with an `@privaterelay.appleid.com` address, which never matches an existing account, so no automatic link happens. The first name falls back to `User`. Emails to that address only reach the real inbox if your sending domain is registered with Apple's private email relay service (Apple Developer portal, Sign in with Apple, Email Sources).
+- **Account deletion and the Apple token.** App Store rules require revoking the Apple token when an account is deleted. Right before calling `DELETE /me`, have the app run Sign in with Apple again and send the fresh `authorization_code` (and `apple_client_id`, the bundle id or Services ID that produced it, when it is not the first of `APPLE_CLIENT_IDS`):
+
+  ```http
+  DELETE /me { "current_password": "...", "apple_authorization_code": "...", "apple_client_id": "com.example.app" }
+  ```
+
+  Revocation is best effort and never blocks the deletion: the audit entry `user.anonymized` records `apple_token_revoked` as `true` or `false` (it is absent when the user has no Apple identity or sent no code). Deletions made by an admin cannot revoke anything.

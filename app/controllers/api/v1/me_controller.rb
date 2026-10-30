@@ -15,7 +15,7 @@ module Api
       end
 
       def update_password
-        require_current_password!
+        require_reauthentication!
 
         if current_user.update(password: params.require(:password), password_confirmation: params[:password_confirmation])
           render_session(current_user, ::Auth::TokenIssuer.call(current_user, request: request))
@@ -25,7 +25,7 @@ module Api
       end
 
       def update_email
-        require_current_password!
+        require_reauthentication!
         new_email = params.require(:email).to_s.strip.downcase
 
         if new_email == current_user.email
@@ -47,12 +47,15 @@ module Api
       end
 
       def destroy
-        require_current_password!
+        require_reauthentication!
         require_second_factor!
 
+        apple_revoked = revoke_apple_token
         current_user.anonymize!
         ::Auth::TokenDenylist.add(current_token_payload["jti"], current_token_payload["exp"])
-        AuditLog.record!("user.anonymized", target: current_user, metadata: { by: "self" })
+        metadata = { by: "self" }
+        metadata[:apple_token_revoked] = apple_revoked unless apple_revoked.nil?
+        AuditLog.record!("user.anonymized", target: current_user, metadata: metadata)
         clear_refresh_cookie
         head :no_content
       end
@@ -64,6 +67,12 @@ module Api
       end
 
       private
+
+      def revoke_apple_token
+        return unless params[:apple_authorization_code].present? && current_user.identities.exists?(provider: "apple")
+
+        ::Auth::Oauth::AppleRevoker.call(authorization_code: params[:apple_authorization_code].to_s, client_id: params[:apple_client_id].to_s)
+      end
 
       def profile_params
         params.permit(:first_name, :last_name, :phone)

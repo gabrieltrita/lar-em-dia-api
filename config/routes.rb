@@ -25,6 +25,8 @@ Rails.application.routes.draw do
         post   "email/confirm",   to: "confirmations#email_change"
         post   "password/forgot", to: "passwords#forgot"
         post   "password/reset",  to: "passwords#reset"
+        post   "oauth/google",    to: "oauth#google"
+        post   "oauth/apple",     to: "oauth#apple"
       end
 
       resource :me, only: %i[show update destroy], controller: :me do
@@ -35,6 +37,7 @@ Rails.application.routes.draw do
         scope module: :me do
           resources :sessions, only: %i[index destroy]
           resources :consents, only: %i[index create]
+          resources :identities, only: %i[index create destroy]
           resource :two_factor, only: %i[show destroy], controller: :two_factor do
             post :setup
             post :enable

@@ -32,17 +32,25 @@ info:
     | `invalid_confirmation_token` | 401 | Bad or expired email confirmation link |
     | `invalid_email_change_token` | 401 | Bad or expired email change link |
     | `invalid_reset_token` | 401 | Bad or expired password reset link |
+    | `oauth_token_invalid` | 401 | Provider ID token is invalid, expired or for another client |
+    | `oauth_email_unverified` | 401 | Provider says the email is not verified |
     | `email_not_confirmed` | 403 | Correct password but email not confirmed yet |
     | `forbidden` | 403 | Not allowed |
     | `two_factor_setup_required` | 403 | Admin must enable 2FA first |
     | `two_factor_required` | 403 | Admins cannot disable 2FA |
     | `not_found` | 404 | Resource not found |
     | `invalid_current_password` | 422 | Wrong current password on a sensitive action |
+    | `reauthentication_unavailable` | 422 | Account has no password, no 2FA and sent no provider token |
+    | `invalid_provider_token` | 422 | The provider token used to re-authenticate is invalid or belongs to another account |
+    | `provider_unavailable` | 422 | The provider token could not be checked because the provider was unreachable; retry |
+    | `identity_already_linked` | 422 | That provider account is already linked, or the user already has one for the provider |
+    | `last_login_method` | 422 | Cannot remove the only way to log in |
     | `two_factor_already_enabled` | 422 | 2FA is already enabled |
     | `two_factor_not_enabled` | 422 | 2FA is not enabled |
     | `consent_required` | 422 | Required consent cannot be revoked |
     | `rate_limited` | 429 | Too many requests, see `Retry-After` |
     | `internal_error` | 500 | Unexpected error |
+    | `oauth_provider_unavailable` | 503 | The provider's signing keys could not be fetched |
 
     Validation `details` codes include Rails defaults (`blank`, `invalid`, `too_short`, `too_long`, `confirmation`, `inclusion`)
     plus `weak_password`, `required` and `same_as_current`.
@@ -244,6 +252,89 @@ paths:
         "200": { $ref: "#/components/responses/Message" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
+  /auth/oauth/google:
+    post:
+      tags: [Auth]
+      summary: Log in, link or sign up with a Google ID token
+      description: |
+        Known Google account logs in; the same email as an existing account links the identity (an unconfirmed account loses its password and sessions first); a new email creates a confirmed account.
+        `accept_terms` and `accept_privacy` are required only when an account is created. An account with 2FA gets the usual `challenge_token`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+                accept_terms: { type: boolean }
+                accept_privacy: { type: boolean }
+                accept_marketing: { type: boolean }
+      responses:
+        "200":
+          description: Session created or 2FA pending
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/SessionResponse"
+                  - $ref: "#/components/schemas/TwoFactorChallengeResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: The provider's signing keys could not be fetched (`oauth_provider_unavailable`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /auth/oauth/apple:
+    post:
+      tags: [Auth]
+      summary: Log in, link or sign up with an Apple identity token
+      description: |
+        Same rules as Google. Apple does not put the name in the token: send `first_name` and `last_name` the first time; they are used only when the account is created and the token has no name.
+        With Hide My Email the account email is an `@privaterelay.appleid.com` address and never matches an existing account.
+        `accept_terms` and `accept_privacy` are required only when an account is created. An account with 2FA gets the usual `challenge_token`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+                first_name: { type: string }
+                last_name: { type: string }
+                accept_terms: { type: boolean }
+                accept_privacy: { type: boolean }
+                accept_marketing: { type: boolean }
+      responses:
+        "200":
+          description: Session created or 2FA pending
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/SessionResponse"
+                  - $ref: "#/components/schemas/TwoFactorChallengeResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: The provider's signing keys could not be fetched (`oauth_provider_unavailable`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /me:
     get:
       tags: [Me]
@@ -288,10 +379,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [current_password]
               properties:
-                current_password: { type: string }
-                code: { type: string, description: Required when 2FA is enabled }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
+                apple_authorization_code: { type: string, description: "Fresh code from Sign in with Apple; when the user has an Apple identity the Apple token is revoked (best effort, never blocks the deletion)" }
+                apple_client_id: { type: string, description: "Bundle id or Services ID that produced the code; defaults to the first of APPLE_CLIENT_IDS" }
       responses:
         "204": { description: Account anonymized }
         "422": { $ref: "#/components/responses/ReauthenticationFailed" }
@@ -307,9 +399,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [current_password, password]
+              required: [password]
               properties:
-                current_password: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
                 password: { type: string }
                 password_confirmation: { type: string }
       responses:
@@ -325,10 +418,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, current_password]
+              required: [email]
               properties:
                 email: { type: string, format: email }
-                current_password: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
       responses:
         "202": { $ref: "#/components/responses/Message" }
         "422": { $ref: "#/components/responses/ValidationError" }
@@ -410,6 +504,78 @@ paths:
         "201": { description: Recorded }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
+  /me/identities:
+    get:
+      tags: [Me]
+      summary: Linked social identities
+      responses:
+        "200":
+          description: Identity list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Identity" }
+    post:
+      tags: [Me]
+      summary: Link a social account to the logged-in user
+      description: |
+        Re-authenticates with `current_password`, or the 2FA `code` for accounts without a password. A provider token cannot re-authenticate this call, because `id_token` here is the account being linked.
+        The email of the provider account may differ from the account's email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                provider: { type: string, enum: [google, apple] }
+                id_token: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required for accounts without a password; also when 2FA is enabled" }
+      responses:
+        "201":
+          description: Identity linked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Identity" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422":
+          description: Re-authentication failed, provider not supported, or `identity_already_linked`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: The provider's signing keys could not be fetched (`oauth_provider_unavailable`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /me/identities/{id}:
+    delete:
+      tags: [Me]
+      summary: Unlink a social identity (cannot remove the only way to log in)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reauthentication" }
+      responses:
+        "204": { description: Identity unlinked }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Re-authentication failed (`invalid_current_password`, `invalid_two_factor_code`, `invalid_provider_token`, `provider_unavailable`, `reauthentication_unavailable`) or the identity is the only way to log in (`last_login_method`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /me/two_factor:
     get:
       tags: [Me]
@@ -450,9 +616,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [current_password]
               properties:
-                current_password: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
       responses:
         "200":
           description: Secret generated
@@ -737,6 +903,7 @@ components:
         email_confirmed: { type: boolean }
         two_factor_enabled: { type: boolean }
         pending_email: { type: [string, "null"] }
+        password_set: { type: boolean, description: "Only in the authenticated user's own profile (GET /me)" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     AdminUser:
@@ -800,6 +967,13 @@ components:
         ip_address: { type: [string, "null"] }
         started_at: { type: string, format: date-time }
         last_activity_at: { type: string, format: date-time }
+    Identity:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string, enum: [google, apple] }
+        email_at_link: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
     ConsentStatus:
       type: object
       properties:
@@ -855,10 +1029,11 @@ components:
         email: { type: string, format: email }
     Reauthentication:
       type: object
-      required: [current_password, code]
       properties:
-        current_password: { type: string }
-        code: { type: string }
+        current_password: { type: string, description: "Required when password_set is true" }
+        code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
+        provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
+        id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
     Session:
       description: Session created
@@ -921,7 +1096,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     ReauthenticationFailed:
-      description: Wrong current password or 2FA code (`invalid_current_password`, `invalid_two_factor_code`)
+      description: Wrong current password, 2FA code or provider token, or no way to re-authenticate (`invalid_current_password`, `invalid_two_factor_code`, `invalid_provider_token`, `provider_unavailable`, `reauthentication_unavailable`)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

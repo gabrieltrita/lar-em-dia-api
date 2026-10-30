@@ -51,4 +51,18 @@ RSpec.describe EnvValidator do
     errors = described_class.new(valid_env.except("AR_ENCRYPTION_PRIMARY_KEY")).errors
     expect(errors).to eq([ "AR_ENCRYPTION_PRIMARY_KEY is not set" ])
   end
+
+  describe "Sign in with Apple key" do
+    let(:apple_env) { { "APPLE_TEAM_ID" => "TEAM123456", "APPLE_KEY_ID" => "KEY1234567", "APPLE_PRIVATE_KEY" => "pem" } }
+
+    it "accepts none or all of the variables" do
+      expect(described_class.new(valid_env).errors).to be_empty
+      expect(described_class.new(valid_env.merge(apple_env)).errors).to be_empty
+    end
+
+    it "rejects a partial configuration" do
+      errors = described_class.new(valid_env.merge(apple_env.except("APPLE_KEY_ID", "APPLE_PRIVATE_KEY"))).errors
+      expect(errors).to eq([ "APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY must be set together (missing: APPLE_KEY_ID, APPLE_PRIVATE_KEY)" ])
+    end
+  end
 end

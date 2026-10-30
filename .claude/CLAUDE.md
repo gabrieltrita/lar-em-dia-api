@@ -25,18 +25,18 @@ PostgreSQL 17 (UUID primary keys everywhere), Redis 7 (cache, Sidekiq, JWT denyl
 ```
 app/blueprints/            UserBlueprint (views: default, self, admin), AuditLogBlueprint
 app/controllers/concerns/  Authenticatable (Bearer JWT), TokenResponder (body or httpOnly cookie), ErrorHandling, Paginatable
-app/controllers/api/v1/auth/   registrations, confirmations, sessions, two_factor, tokens, passwords
+app/controllers/api/v1/auth/   registrations, confirmations, sessions, two_factor, tokens, passwords, oauth
 app/controllers/api/v1/        me (profile, password, email, export, destroy), roles
-app/controllers/api/v1/me/     sessions, two_factor, consents
+app/controllers/api/v1/me/     sessions, two_factor, consents, identities
 app/controllers/api/v1/admin/  base (admin + 2FA required), users, audit_logs
 app/controllers/api/v1/notes_controller.rb  example domain module (Note, NotePolicy, NoteBlueprint); see docs/FORKING.md to remove it
 app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENABLE_API_DOCS=true)
 app/controllers/health_controller.rb GET /health (readiness, public); checks in app/services/health_check.rb
 app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
-app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Current
+app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current
 app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
-app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed
+app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, OauthSignin, oauth/JwksVerifier (+ GoogleVerifier, AppleVerifier), oauth/Providers, oauth/AppleRevoker, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed/ProviderUnavailable
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
 lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
@@ -67,7 +67,12 @@ spec/                      models, requests, mailers, policies, services, contro
 - Mail jobs receive only the user (GlobalID). Tokens are generated inside `UserMailer`, never passed through `deliver_later`, Redis or logs.
 - Roles are read from the database, never from the token. Authorization goes through Pundit; admins cannot change their own role or delete themselves.
 - Any password change goes through the `User` callbacks that revoke every session, audit and email the owner. Do not bypass them with `update_columns` on `password_digest` (except `anonymize!`).
-- Sensitive actions re-authenticate with `require_current_password!` and, when 2FA is on, `require_second_factor!`.
+- Sensitive actions re-authenticate with `require_reauthentication!` (the current password; for accounts without a password the 2FA code or a fresh ID token of an identity already linked to the account) and, when 2FA is on, `require_second_factor!`. The code is verified only once per request, because a TOTP code works once.
+- Accounts can have no password (`password_digest` is nullable; `User#password_set?`). Any code that reads `password_digest` or `password_salt` must handle `nil`, and a user needs a password or an identity (`login_methods_count`). Never remove the last login method.
+- `Identity#provider_uid` is encrypted deterministically, filtered from logs, and never returned by the API or the export.
+- The Apple private key (`APPLE_PRIVATE_KEY`) and authorization codes never reach logs or audit metadata; revocation failures only log the exception class and never block account deletion.
+- Social login accepts only a verified provider ID token (signature, issuer, audience, expiry, `email_verified`); never trust an email or uid sent by the client. Linking an identity to an unconfirmed account discards its password and sessions first. Third-party HTTP calls have short timeouts, their failures answer 503, and logs carry only the exception class.
+- Adding a social provider means a `JwksVerifier` subclass (constants only), one entry in `Auth::Oauth::Providers::VERIFIERS`, a route and a client-ids variable. A provider token only counts as re-authentication when its `sub` matches an identity of the current user, and never for `POST /me/identities`, where the token is the account being linked.
 - Account deletion is anonymization (`User#anonymize!`), never a hard delete, so the audit trail stays consistent.
 - `AuditLog` and `Consent` rows are immutable (`readonly?`). Record sensitive events with `AuditLog.record!(action, target:, actor:, metadata:)`; `metadata` never holds personal data and `action` must be in `AuditLog::ACTIONS`.
 - New sensitive or unauthenticated endpoints get a Rack::Attack throttle in `config/initializers/rack_attack.rb` (the request body is JSON; use `json_param`).
@@ -136,3 +141,5 @@ docker compose exec api bundle exec rspec
 - `/up` and `/health` are excluded from `config.hosts` checks, the general `req/ip` throttle and lograge; keep that list in sync when adding infrastructure endpoints.
 - Sentry 7 with `send_default_pii = false` never collects request bodies, query strings or cookies, but it does send `User-Agent` and `REMOTE_ADDR` unless `SentryConfig` removes them; the scrubbing specs prove both, so a Sentry upgrade that changes this fails CI.
 - The ActiveSupport breadcrumbs logger is injected by sentry-rails only at boot; specs inject and detach it inside `with_sentry`.
+- `has_secure_password` runs with `validations: false`, so `User` re-declares the password confirmation and the "password or identity" validation; keep both when editing it.
+- Specs never reach the network (`webmock/rspec`); stub every external HTTP call, such as Google's JWKS.

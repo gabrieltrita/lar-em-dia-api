@@ -7,7 +7,7 @@ module Api
         end
 
         def setup
-          require_current_password!
+          require_reauthentication!
           return already_enabled if current_user.two_factor_enabled?
 
           current_user.generate_otp_secret!
@@ -29,7 +29,7 @@ module Api
           end
           return render_error(status: :unprocessable_content, code: "two_factor_not_enabled", message: "2FA is not enabled") unless current_user.two_factor_enabled?
 
-          require_current_password!
+          require_reauthentication!
           require_second_factor!
 
           current_user.disable_two_factor!
@@ -41,7 +41,7 @@ module Api
         def backup_codes
           return render_error(status: :unprocessable_content, code: "two_factor_not_enabled", message: "2FA is not enabled") unless current_user.two_factor_enabled?
 
-          require_current_password!
+          require_reauthentication!
           require_second_factor!
 
           codes = current_user.regenerate_backup_codes!
