@@ -41,6 +41,7 @@ app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
 config/deploy.yml          Kamal deploy (web, job, Postgres and Redis accessories); name from config/app.yml, server details from the environment
 .kamal/secrets             references to environment variables for Kamal, never values
+config/deploy.staging.yml  staging destination (bin/kamal ... -d staging); .kamal/secrets.staging reads the same secrets from STAGING_ variables
 lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
 lib/sentry_config.rb       Sentry privacy policy (SentryConfig.apply / .scrub)
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
@@ -146,3 +147,4 @@ docker compose exec api bundle exec rspec
 - `has_secure_password` runs with `validations: false`, so `User` re-declares the password confirmation and the "password or identity" validation; keep both when editing it.
 - Specs never reach the network (`webmock/rspec`); stub every external HTTP call, such as Google's JWKS.
 - Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes (their HMAC key derives from it).
+- Kamal's secrets reader only expands `$VAR` and `${VAR}`: `${VAR:-default}` leaves `:-}` in the value, and an unset variable becomes an empty string with no warning. `EnvValidator` is the safety net at boot, so optional secrets are plain `$VAR` references. `.kamal/secrets.staging` mirrors `.kamal/secrets` with `STAGING_` sources (`spec/config/deploy_spec.rb` checks the expanded values).

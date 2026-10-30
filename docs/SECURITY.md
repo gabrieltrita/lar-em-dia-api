@@ -96,6 +96,7 @@ Change the value, restart the services that use it, and rotate any copy in CI or
 - [ ] `.kamal/secrets` holds only references to environment variables, never values
 - [ ] Postgres and Redis run as Kamal accessories with no published ports
 - [ ] The `ghcr.io` token only has `write:packages`
+- [ ] Staging uses its own secrets (`STAGING_*`), never the production ones, and is the only environment with `ENABLE_API_DOCS=true`
 
 ## Reporting a vulnerability
 
