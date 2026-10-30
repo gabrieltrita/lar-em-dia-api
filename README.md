@@ -166,6 +166,18 @@ Commands: `bin/kamal setup` the first time (installs Docker, boots the accessori
 
 Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes. Database backups arrive with phase 4.4; until then take `pg_dump` by hand.
 
+### Staging with Kamal
+
+`bin/kamal setup -d staging` and `bin/kamal deploy -d staging` use `config/deploy.staging.yml` on top of `config/deploy.yml`: service `<slug>-api-staging` with its own Postgres and Redis containers, database `<slug>_api_staging`, and `ENABLE_API_DOCS=true`, so Swagger is at `/docs`. Staging can share the server with production or use another one, because `DEPLOY_HOST` comes from your environment.
+
+`.kamal/secrets.staging` reads every secret from a variable with the `STAGING_` prefix (`STAGING_JWT_SECRET`, `STAGING_DATABASE_URL`, `STAGING_POSTGRES_PASSWORD`, ...), so production and staging secrets can live side by side and one can never be used for the other by mistake; only `KAMAL_REGISTRY_PASSWORD` is shared. The variables that are not secrets keep their names (`DEPLOY_HOST`, `APP_HOST`, `CORS_ORIGINS`, `FRONTEND_URL`, ...): export the staging values before the command.
+
+- `STAGING_DATABASE_URL`: `postgres://postgres:<STAGING_POSTGRES_PASSWORD>@<slug>-api-staging-db:5432/<slug>_api_staging`
+- `STAGING_REDIS_URL`: `redis://:<STAGING_REDIS_PASSWORD>@<slug>-api-staging-redis:6379/1`, and `STAGING_SIDEKIQ_REDIS_URL` the same with `/0`
+- Point `SMTP_ADDRESS` at a test mailbox so staging never emails real users.
+
+Kamal does not warn about a secret that was not exported: it reaches the container empty, `EnvValidator` refuses to boot, the health check fails and the deploy stops with the previous version still running.
+
 ## Features and how to use them
 
 All paths below are relative to `/api/v1`. Authenticated calls send `Authorization: Bearer <access_token>`.
