@@ -44,6 +44,10 @@ group :development, :test do
   gem "faker"
 end
 
+group :development do
+  gem "kamal", "~> 2.12", require: false
+end
+
 group :test do
   gem "shoulda-matchers", "~> 8.0"
   gem "simplecov", require: false

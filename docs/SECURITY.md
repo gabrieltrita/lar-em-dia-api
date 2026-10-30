@@ -92,6 +92,10 @@ Change the value, restart the services that use it, and rotate any copy in CI or
 - [ ] `SENTRY_DSN` set (no personal data is sent)
 - [ ] `/docs` disabled (default in production) unless `ENABLE_API_DOCS=true`
 - [ ] Encryption keys backed up in a secret manager
+- [ ] `SECRET_KEY_BASE` set (64+) and never rotated without warning users: it invalidates the 2FA backup codes
+- [ ] `.kamal/secrets` holds only references to environment variables, never values
+- [ ] Postgres and Redis run as Kamal accessories with no published ports
+- [ ] The `ghcr.io` token only has `write:packages`
 
 ## Reporting a vulnerability
 

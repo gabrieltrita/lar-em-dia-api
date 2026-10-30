@@ -39,6 +39,8 @@ app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
 app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, OauthSignin, oauth/JwksVerifier (+ GoogleVerifier, AppleVerifier), oauth/Providers, oauth/AppleRevoker, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed/ProviderUnavailable
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
+config/deploy.yml          Kamal deploy (web, job, Postgres and Redis accessories); name from config/app.yml, server details from the environment
+.kamal/secrets             references to environment variables for Kamal, never values
 lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
 lib/sentry_config.rb       Sentry privacy policy (SentryConfig.apply / .scrub)
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
@@ -76,7 +78,7 @@ spec/                      models, requests, mailers, policies, services, contro
 - Account deletion is anonymization (`User#anonymize!`), never a hard delete, so the audit trail stays consistent.
 - `AuditLog` and `Consent` rows are immutable (`readonly?`). Record sensitive events with `AuditLog.record!(action, target:, actor:, metadata:)`; `metadata` never holds personal data and `action` must be in `AuditLog::ACTIONS`.
 - New sensitive or unauthenticated endpoints get a Rack::Attack throttle in `config/initializers/rack_attack.rb` (the request body is JSON; use `json_param`).
-- Production refuses to boot without strong secrets (`EnvValidator`); add new required variables there and to `.env.example`.
+- Production refuses to boot without strong secrets (`EnvValidator`); a new required variable goes into `EnvValidator::REQUIRED`, `config/deploy.yml`, `.kamal/secrets`, `.env.example` and the README in the same change (`spec/config/deploy_spec.rb` fails otherwise). `.kamal/secrets` holds references only; never write a value in it.
 - Content a user creates (notes, orders, messages) is listed in `User::PERSONAL_DATA`: `UserDataExport` exports it under `content` with `<Model>Blueprint`, and `User#anonymize!` destroys it in the same transaction. Its personal columns are encrypted and filtered from logs.
 - Logs never carry personal data: no params, bodies, IPs, user agents, exception messages or job arguments (`JsonLogFormatter` logs only an exception's class; `config.active_job.log_arguments` is off with JSON logs). Identify requests by `request_id` and users by `user_id` (UUID). Log a Hash of safe fields (`Rails.logger.error({ error: e.class.name, ... })`), never an exception message or interpolated values.
 - Sentry events never carry personal data. `lib/sentry_config.rb` is the single policy (used by the initializer and by `with_sentry` in specs): `send_default_pii = false`, no client IP, no `Authorization`/`Cookie`/`X-Token-Transport`/`User-Agent` headers, exception and manual messages replaced by `[FILTERED]`, no SQL text or cache keys in breadcrumbs, no Sidekiq job arguments, user reduced to its id. New personal headers, breadcrumb fields or contexts go there, with a spec.
@@ -143,3 +145,4 @@ docker compose exec api bundle exec rspec
 - The ActiveSupport breadcrumbs logger is injected by sentry-rails only at boot; specs inject and detach it inside `with_sentry`.
 - `has_secure_password` runs with `validations: false`, so `User` re-declares the password confirmation and the "password or identity" validation; keep both when editing it.
 - Specs never reach the network (`webmock/rspec`); stub every external HTTP call, such as Google's JWKS.
+- Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes (their HMAC key derives from it).
