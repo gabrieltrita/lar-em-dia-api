@@ -73,7 +73,7 @@ class Rack::Attack
   end
 
   throttle("me/reauth/ip", limit: 5, period: 1.minute) do |req|
-    req.ip if (req.post? || req.patch? || req.delete?) && (REAUTH_PATHS.include?(req.path) || req.path.start_with?("/api/v1/me/two_factor") || (req.delete? && req.path == "/api/v1/me"))
+    req.ip if (req.post? || req.patch? || req.delete?) && (REAUTH_PATHS.include?(req.path) || req.path.start_with?("/api/v1/me/two_factor", "/api/v1/me/identities") || (req.delete? && req.path == "/api/v1/me"))
   end
 
   self.throttled_responder = lambda do |_req|

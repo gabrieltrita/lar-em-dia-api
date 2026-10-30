@@ -365,12 +365,14 @@ An account can be linked to Google or Apple identities and can have no password 
 
 ```http
 GET    /me/identities                                   -> linked providers (id, provider, email_at_link, created_at)
+POST   /me/identities { "provider": "google", "id_token": "...", "current_password": "..." } -> 201
 DELETE /me/identities/:id { "current_password": "..." } -> 204
 ```
 
 - `GET /me` returns `password_set`; the front end uses it to offer "set a password" instead of "change password".
-- Sensitive actions (`PATCH /me/password`, `PATCH /me/email`, `DELETE /me`, 2FA setup, disable and backup codes, unlinking an identity) re-authenticate with `current_password` when the account has a password. Accounts without a password send the 2FA `code` instead. An account with neither gets `reauthentication_unavailable` (422) until a fresh provider token can be used for this.
+- Sensitive actions (`PATCH /me/password`, `PATCH /me/email`, `DELETE /me`, 2FA setup, disable and backup codes, unlinking an identity) re-authenticate with `current_password` when the account has a password. Accounts without a password send the 2FA `code` instead, or a fresh provider ID token (`provider` + `id_token`) of an account already linked to them. An account with none of these gets `reauthentication_unavailable` (422). A wrong token or one that belongs to another account gets `invalid_provider_token` (422), and `provider_unavailable` (422) means the provider could not be reached, so retry.
 - `PATCH /me/password` also sets the first password of a passwordless account.
+- `POST /me/identities` links a provider account while logged in, even when its email differs from the user's. It re-authenticates with the password or the 2FA code only, because `id_token` is the account being linked; an account that only has Google and no 2FA first sets a password or enables 2FA (both accept the provider token). A provider account can belong to one user, and a user can have one account per provider: otherwise `identity_already_linked` (422).
 - The only way to log in cannot be removed: the request fails with `last_login_method` (422).
 - Each user can link one identity per provider, and a provider account can belong to one user. The provider's user id is encrypted deterministically (lookup and unique index) and is never returned by the API or the data export; the linked email is encrypted too.
 - Identities are listed in `User::PERSONAL_DATA`: they appear in the data export under `content.identities` and are destroyed on anonymization. Unlinking is audited as `identity.unlinked`.

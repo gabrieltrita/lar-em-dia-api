@@ -40,7 +40,10 @@ info:
     | `two_factor_required` | 403 | Admins cannot disable 2FA |
     | `not_found` | 404 | Resource not found |
     | `invalid_current_password` | 422 | Wrong current password on a sensitive action |
-    | `reauthentication_unavailable` | 422 | Account has no password and no 2FA, so it cannot re-authenticate yet |
+    | `reauthentication_unavailable` | 422 | Account has no password, no 2FA and sent no provider token |
+    | `invalid_provider_token` | 422 | The provider token used to re-authenticate is invalid or belongs to another account |
+    | `provider_unavailable` | 422 | The provider token could not be checked because the provider was unreachable; retry |
+    | `identity_already_linked` | 422 | That provider account is already linked, or the user already has one for the provider |
     | `last_login_method` | 422 | Cannot remove the only way to log in |
     | `two_factor_already_enabled` | 422 | 2FA is already enabled |
     | `two_factor_not_enabled` | 422 | 2FA is not enabled |
@@ -471,6 +474,45 @@ paths:
                   data:
                     type: array
                     items: { $ref: "#/components/schemas/Identity" }
+    post:
+      tags: [Me]
+      summary: Link a social account to the logged-in user
+      description: |
+        Re-authenticates with `current_password`, or the 2FA `code` for accounts without a password. A provider token cannot re-authenticate this call, because `id_token` here is the account being linked.
+        The email of the provider account may differ from the account's email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                provider: { type: string, enum: [google] }
+                id_token: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required for accounts without a password; also when 2FA is enabled" }
+      responses:
+        "201":
+          description: Identity linked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Identity" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422":
+          description: Re-authentication failed, provider not supported, or `identity_already_linked`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: The provider's signing keys could not be fetched (`oauth_provider_unavailable`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /me/identities/{id}:
     delete:
       tags: [Me]
@@ -485,7 +527,7 @@ paths:
         "204": { description: Identity unlinked }
         "404": { $ref: "#/components/responses/NotFound" }
         "422":
-          description: Re-authentication failed (`invalid_current_password`, `invalid_two_factor_code`, `reauthentication_unavailable`) or the identity is the only way to log in (`last_login_method`)
+          description: Re-authentication failed (`invalid_current_password`, `invalid_two_factor_code`, `invalid_provider_token`, `provider_unavailable`, `reauthentication_unavailable`) or the identity is the only way to log in (`last_login_method`)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -945,6 +987,8 @@ components:
       properties:
         current_password: { type: string, description: "Required when password_set is true" }
         code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
+        provider: { type: string, enum: [google], description: "Provider of id_token; defaults to google" }
+        id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
     Session:
       description: Session created
@@ -1007,7 +1051,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     ReauthenticationFailed:
-      description: Wrong current password or 2FA code, or no way to re-authenticate (`invalid_current_password`, `invalid_two_factor_code`, `reauthentication_unavailable`)
+      description: Wrong current password, 2FA code or provider token, or no way to re-authenticate (`invalid_current_password`, `invalid_two_factor_code`, `invalid_provider_token`, `provider_unavailable`, `reauthentication_unavailable`)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
