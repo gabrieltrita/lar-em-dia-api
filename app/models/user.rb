@@ -8,13 +8,14 @@ class User < ApplicationRecord
   BASE_LOCK_DURATION = 15.minutes
   MAX_LOCK_DURATION = 24.hours
 
-  PERSONAL_DATA = %i[notes].freeze
+  PERSONAL_DATA = %i[notes identities].freeze
 
-  has_secure_password reset_token: false
+  has_secure_password reset_token: false, validations: false
 
   has_many :refresh_tokens, dependent: :delete_all
   has_many :consents, dependent: :delete_all
   has_many :notes, dependent: :destroy
+  has_many :identities, dependent: :destroy
 
   encrypts :email, deterministic: true, downcase: true
   encrypts :first_name, :last_name, :phone, :unconfirmed_email, :otp_secret
@@ -22,7 +23,7 @@ class User < ApplicationRecord
   enum :role, { user: 0, admin: 1 }, default: :user, validate: true
 
   generates_token_for :password_reset, expires_in: 30.minutes do
-    password_salt.last(10)
+    password_salt&.last(10)
   end
 
   generates_token_for :email_confirmation, expires_in: 24.hours do
@@ -44,6 +45,9 @@ class User < ApplicationRecord
   validates :phone, length: { maximum: 20 }
   validates :password, length: { minimum: 8, maximum: 72 }, format: { with: PASSWORD_FORMAT, message: :weak_password }, if: -> { password.present? }
 
+  validates :password, confirmation: true, allow_blank: true
+  validate :password_or_identity_present
+
   scope :not_anonymized, -> { where(anonymized_at: nil) }
 
   before_save :track_password_change, if: :will_save_change_to_password_digest?
@@ -57,6 +61,14 @@ class User < ApplicationRecord
 
   def full_name
     [ first_name, last_name ].compact_blank.join(" ")
+  end
+
+  def password_set?
+    password_digest.present?
+  end
+
+  def login_methods_count
+    identities.count + (password_set? ? 1 : 0)
   end
 
   def anonymized?
@@ -143,6 +155,12 @@ class User < ApplicationRecord
   end
 
   private
+
+  def password_or_identity_present
+    return if password_set? || identities.any?
+
+    errors.add(:password, :blank)
+  end
 
   def track_password_change
     self.password_changed_at = Time.current if persisted?

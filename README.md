@@ -90,12 +90,12 @@ app/
   controllers/
     concerns/        Authenticatable, TokenResponder, ErrorHandling, Paginatable
     api/v1/auth/     register, confirm, login, two_factor, refresh, logout, passwords
-    api/v1/me/       sessions, two_factor, consents
+    api/v1/me/       sessions, two_factor, consents, identities
     api/v1/admin/    users, audit_logs
     api/v1/notes_controller.rb   example domain module (see feature 16)
   jobs/              MaintenanceCleanupJob
   mailers/           UserMailer
-  models/            User, RefreshToken, AuditLog, Consent, Current, Note (example)
+  models/            User, RefreshToken, AuditLog, Consent, Identity, Current, Note (example)
   policies/          Pundit
   services/auth/     JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge
 bin/rename           renames the app after forking (see App identity)
@@ -298,7 +298,7 @@ Name and phone are encrypted non-deterministically, so the user list can only fi
 
 ### 11. Audit log
 
-Every sensitive event is recorded with actor, target, IP, user agent and request id (IP and user agent encrypted): logins and failures, lockouts, logouts, token reuse, registration, confirmation, role, password and email changes, 2FA changes, session revocations, consents, exports and anonymizations. Records are immutable and never contain personal data in `metadata`. Query them at `GET /admin/audit_logs`.
+Every sensitive event is recorded with actor, target, IP, user agent and request id (IP and user agent encrypted): logins and failures, lockouts, logouts, token reuse, registration, confirmation, role, password and email changes, 2FA changes, session revocations, identity unlinks, consents, exports and anonymizations. Records are immutable and never contain personal data in `metadata`. Query them at `GET /admin/audit_logs`.
 
 ### 12. Privacy (LGPD)
 
@@ -358,3 +358,19 @@ Supported types: `string`, `text`, `integer`, `float`, `decimal`, `boolean`, `da
 ### 18. Health checks
 
 `GET /health` reports whether the database, the cache and Sidekiq are working (see "Production" for statuses, HTTP codes and where to use it, and `/up` for liveness).
+
+### 19. Social identities and passwordless accounts
+
+An account can be linked to Google or Apple identities and can have no password at all (the login endpoints arrive in the next phase).
+
+```http
+GET    /me/identities                                   -> linked providers (id, provider, email_at_link, created_at)
+DELETE /me/identities/:id { "current_password": "..." } -> 204
+```
+
+- `GET /me` returns `password_set`; the front end uses it to offer "set a password" instead of "change password".
+- Sensitive actions (`PATCH /me/password`, `PATCH /me/email`, `DELETE /me`, 2FA setup, disable and backup codes, unlinking an identity) re-authenticate with `current_password` when the account has a password. Accounts without a password send the 2FA `code` instead. An account with neither gets `reauthentication_unavailable` (422) until a fresh provider token can be used for this.
+- `PATCH /me/password` also sets the first password of a passwordless account.
+- The only way to log in cannot be removed: the request fails with `last_login_method` (422).
+- Each user can link one identity per provider, and a provider account can belong to one user. The provider's user id is encrypted deterministically (lookup and unique index) and is never returned by the API or the data export; the linked email is encrypted too.
+- Identities are listed in `User::PERSONAL_DATA`: they appear in the data export under `content.identities` and are destroyed on anonymization. Unlinking is audited as `identity.unlinked`.

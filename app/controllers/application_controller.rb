@@ -28,6 +28,16 @@ class ApplicationController < ActionController::API
     ActiveModel::Type::Boolean.new.cast(value) == true
   end
 
+  def require_reauthentication!
+    return require_current_password! if current_user.password_set?
+
+    unless current_user.two_factor_enabled?
+      raise Auth::ReauthenticationFailed.new("Reauthentication is not available for this account", code: "reauthentication_unavailable")
+    end
+
+    require_second_factor!
+  end
+
   def require_current_password!
     return if current_user.authenticate(params.require(:current_password).to_s)
 
@@ -36,8 +46,12 @@ class ApplicationController < ActionController::API
 
   def require_second_factor!
     return unless current_user.two_factor_enabled?
-    return if current_user.verify_second_factor(params[:code])
+    return if @second_factor_verified
 
-    raise Auth::ReauthenticationFailed.new("Invalid verification code", code: "invalid_two_factor_code")
+    unless current_user.verify_second_factor(params[:code])
+      raise Auth::ReauthenticationFailed.new("Invalid verification code", code: "invalid_two_factor_code")
+    end
+
+    @second_factor_verified = true
   end
 end

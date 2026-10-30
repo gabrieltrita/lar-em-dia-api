@@ -25,5 +25,13 @@ FactoryBot.define do
     trait :admin_without_2fa do
       role { :admin }
     end
+
+    trait :passwordless do
+      password { nil }
+
+      after(:build) do |user|
+        user.identities.build(provider: :google, provider_uid: SecureRandom.hex(8), email_at_link: user.email)
+      end
+    end
   end
 end

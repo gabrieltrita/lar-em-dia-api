@@ -15,7 +15,7 @@ module Api
       end
 
       def update_password
-        require_current_password!
+        require_reauthentication!
 
         if current_user.update(password: params.require(:password), password_confirmation: params[:password_confirmation])
           render_session(current_user, ::Auth::TokenIssuer.call(current_user, request: request))
@@ -25,7 +25,7 @@ module Api
       end
 
       def update_email
-        require_current_password!
+        require_reauthentication!
         new_email = params.require(:email).to_s.strip.downcase
 
         if new_email == current_user.email
@@ -47,7 +47,7 @@ module Api
       end
 
       def destroy
-        require_current_password!
+        require_reauthentication!
         require_second_factor!
 
         current_user.anonymize!

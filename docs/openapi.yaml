@@ -38,6 +38,8 @@ info:
     | `two_factor_required` | 403 | Admins cannot disable 2FA |
     | `not_found` | 404 | Resource not found |
     | `invalid_current_password` | 422 | Wrong current password on a sensitive action |
+    | `reauthentication_unavailable` | 422 | Account has no password and no 2FA, so it cannot re-authenticate yet |
+    | `last_login_method` | 422 | Cannot remove the only way to log in |
     | `two_factor_already_enabled` | 422 | 2FA is already enabled |
     | `two_factor_not_enabled` | 422 | 2FA is not enabled |
     | `consent_required` | 422 | Required consent cannot be revoked |
@@ -288,10 +290,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [current_password]
               properties:
-                current_password: { type: string }
-                code: { type: string, description: Required when 2FA is enabled }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
       responses:
         "204": { description: Account anonymized }
         "422": { $ref: "#/components/responses/ReauthenticationFailed" }
@@ -307,9 +308,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [current_password, password]
+              required: [password]
               properties:
-                current_password: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
                 password: { type: string }
                 password_confirmation: { type: string }
       responses:
@@ -325,10 +327,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, current_password]
+              required: [email]
               properties:
                 email: { type: string, format: email }
-                current_password: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
       responses:
         "202": { $ref: "#/components/responses/Message" }
         "422": { $ref: "#/components/responses/ValidationError" }
@@ -410,6 +413,39 @@ paths:
         "201": { description: Recorded }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
+  /me/identities:
+    get:
+      tags: [Me]
+      summary: Linked social identities
+      responses:
+        "200":
+          description: Identity list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Identity" }
+  /me/identities/{id}:
+    delete:
+      tags: [Me]
+      summary: Unlink a social identity (cannot remove the only way to log in)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reauthentication" }
+      responses:
+        "204": { description: Identity unlinked }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Re-authentication failed (`invalid_current_password`, `invalid_two_factor_code`, `reauthentication_unavailable`) or the identity is the only way to log in (`last_login_method`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /me/two_factor:
     get:
       tags: [Me]
@@ -450,9 +486,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [current_password]
               properties:
-                current_password: { type: string }
+                current_password: { type: string, description: "Required when password_set is true" }
+                code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
       responses:
         "200":
           description: Secret generated
@@ -737,6 +773,7 @@ components:
         email_confirmed: { type: boolean }
         two_factor_enabled: { type: boolean }
         pending_email: { type: [string, "null"] }
+        password_set: { type: boolean, description: "Only in the authenticated user's own profile (GET /me)" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     AdminUser:
@@ -800,6 +837,13 @@ components:
         ip_address: { type: [string, "null"] }
         started_at: { type: string, format: date-time }
         last_activity_at: { type: string, format: date-time }
+    Identity:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string, enum: [google, apple] }
+        email_at_link: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
     ConsentStatus:
       type: object
       properties:
@@ -855,10 +899,9 @@ components:
         email: { type: string, format: email }
     Reauthentication:
       type: object
-      required: [current_password, code]
       properties:
-        current_password: { type: string }
-        code: { type: string }
+        current_password: { type: string, description: "Required when password_set is true" }
+        code: { type: string, description: "Required when 2FA is enabled; also the way to re-authenticate when the account has no password" }
   responses:
     Session:
       description: Session created
@@ -921,7 +964,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     ReauthenticationFailed:
-      description: Wrong current password or 2FA code (`invalid_current_password`, `invalid_two_factor_code`)
+      description: Wrong current password or 2FA code, or no way to re-authenticate (`invalid_current_password`, `invalid_two_factor_code`, `reauthentication_unavailable`)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
