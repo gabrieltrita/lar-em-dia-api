@@ -12,6 +12,22 @@ RSpec.describe User do
     it { is_expected.to validate_presence_of(:first_name) }
     it { is_expected.to define_enum_for(:role).with_values(user: 0, admin: 1) }
 
+    it "requires a password when there is no identity" do
+      user = build(:user, password: nil)
+      expect(user).not_to be_valid
+      expect(user.errors.details[:password]).to include(error: :blank)
+    end
+
+    it "accepts a missing password when an identity is present" do
+      expect(build(:user, :passwordless)).to be_valid
+    end
+
+    it "rejects a password confirmation mismatch" do
+      user = build(:user, password: "Senha@123", password_confirmation: "Outra@123")
+      expect(user).not_to be_valid
+      expect(user.errors.details[:password_confirmation]).to include(error: :confirmation, attribute: "Password")
+    end
+
     it "requires a strong password" do
       user = build(:user, password: "fraquinha")
       expect(user).not_to be_valid
@@ -90,6 +106,35 @@ RSpec.describe User do
     end
   end
 
+  describe "passwordless accounts" do
+    let(:user) { create(:user, :passwordless) }
+
+    it "reports no password and counts the identity as the only login method" do
+      expect(user).not_to be_password_set
+      expect(user.login_methods_count).to eq(1)
+    end
+
+    it "counts the password and every identity as login methods" do
+      with_password = create(:user)
+      create(:identity, user: with_password)
+      expect(with_password).to be_password_set
+      expect(with_password.login_methods_count).to eq(2)
+    end
+
+    it "does not authenticate with any password" do
+      expect(user.authenticate("Senha@123")).to be(false)
+      expect(described_class.authenticate_by(email: user.email, password: "Senha@123")).to be_nil
+    end
+
+    it "generates a password reset token that stops working once a password is set" do
+      token = user.generate_token_for(:password_reset)
+      expect(described_class.find_by_token_for(:password_reset, token)).to eq(user)
+
+      user.update!(password: "Nova@12345")
+      expect(described_class.find_by_token_for(:password_reset, token)).to be_nil
+    end
+  end
+
   describe "#anonymize!" do
     let(:user) { create(:user, :with_2fa, email: "titular@example.com", first_name: "Joana", phone: "+5511911112222") }
 
@@ -106,6 +151,16 @@ RSpec.describe User do
       expect(user.refresh_tokens.active).to be_empty
       expect(User.find_by(email: "titular@example.com")).to be_nil
       expect(raw_row(user, "first_name")["first_name"]).not_to include("Deleted")
+    end
+
+    it "deletes the linked identities" do
+      create(:identity, user: user)
+      other = create(:identity)
+
+      user.anonymize!
+
+      expect(user.identities).to be_empty
+      expect(Identity.exists?(other.id)).to be(true)
     end
 
     it "deletes the content listed in PERSONAL_DATA" do

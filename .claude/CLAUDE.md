@@ -27,14 +27,14 @@ app/blueprints/            UserBlueprint (views: default, self, admin), AuditLog
 app/controllers/concerns/  Authenticatable (Bearer JWT), TokenResponder (body or httpOnly cookie), ErrorHandling, Paginatable
 app/controllers/api/v1/auth/   registrations, confirmations, sessions, two_factor, tokens, passwords
 app/controllers/api/v1/        me (profile, password, email, export, destroy), roles
-app/controllers/api/v1/me/     sessions, two_factor, consents
+app/controllers/api/v1/me/     sessions, two_factor, consents, identities
 app/controllers/api/v1/admin/  base (admin + 2FA required), users, audit_logs
 app/controllers/api/v1/notes_controller.rb  example domain module (Note, NotePolicy, NoteBlueprint); see docs/FORKING.md to remove it
 app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENABLE_API_DOCS=true)
 app/controllers/health_controller.rb GET /health (readiness, public); checks in app/services/health_check.rb
 app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
-app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Current
+app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current
 app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
 app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed
 app/services/user_data_export.rb
@@ -67,7 +67,9 @@ spec/                      models, requests, mailers, policies, services, contro
 - Mail jobs receive only the user (GlobalID). Tokens are generated inside `UserMailer`, never passed through `deliver_later`, Redis or logs.
 - Roles are read from the database, never from the token. Authorization goes through Pundit; admins cannot change their own role or delete themselves.
 - Any password change goes through the `User` callbacks that revoke every session, audit and email the owner. Do not bypass them with `update_columns` on `password_digest` (except `anonymize!`).
-- Sensitive actions re-authenticate with `require_current_password!` and, when 2FA is on, `require_second_factor!`.
+- Sensitive actions re-authenticate with `require_reauthentication!` (the current password, or the 2FA code when the account has no password) and, when 2FA is on, `require_second_factor!`. The code is verified only once per request, because a TOTP code works once.
+- Accounts can have no password (`password_digest` is nullable; `User#password_set?`). Any code that reads `password_digest` or `password_salt` must handle `nil`, and a user needs a password or an identity (`login_methods_count`). Never remove the last login method.
+- `Identity#provider_uid` is encrypted deterministically, filtered from logs, and never returned by the API or the export.
 - Account deletion is anonymization (`User#anonymize!`), never a hard delete, so the audit trail stays consistent.
 - `AuditLog` and `Consent` rows are immutable (`readonly?`). Record sensitive events with `AuditLog.record!(action, target:, actor:, metadata:)`; `metadata` never holds personal data and `action` must be in `AuditLog::ACTIONS`.
 - New sensitive or unauthenticated endpoints get a Rack::Attack throttle in `config/initializers/rack_attack.rb` (the request body is JSON; use `json_param`).
@@ -136,3 +138,4 @@ docker compose exec api bundle exec rspec
 - `/up` and `/health` are excluded from `config.hosts` checks, the general `req/ip` throttle and lograge; keep that list in sync when adding infrastructure endpoints.
 - Sentry 7 with `send_default_pii = false` never collects request bodies, query strings or cookies, but it does send `User-Agent` and `REMOTE_ADDR` unless `SentryConfig` removes them; the scrubbing specs prove both, so a Sentry upgrade that changes this fails CI.
 - The ActiveSupport breadcrumbs logger is injected by sentry-rails only at boot; specs inject and detach it inside `with_sentry`.
+- `has_secure_password` runs with `validations: false`, so `User` re-declares the password confirmation and the "password or identity" validation; keep both when editing it.

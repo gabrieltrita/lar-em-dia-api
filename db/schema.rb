@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_23_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_000002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -41,6 +41,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000001) do
     t.datetime "created_at", null: false
     t.index ["user_id", "kind", "created_at"], name: "index_consents_on_user_id_and_kind_and_created_at"
     t.index ["user_id"], name: "index_consents_on_user_id"
+  end
+
+  create_table "identities", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.string "provider", null: false
+    t.text "provider_uid", null: false
+    t.text "email_at_link"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider", "provider_uid"], name: "index_identities_on_provider_and_provider_uid", unique: true
+    t.index ["user_id", "provider"], name: "index_identities_on_user_id_and_provider", unique: true
   end
 
   create_table "notes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -77,7 +88,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000001) do
     t.text "first_name", null: false
     t.text "last_name"
     t.text "phone"
-    t.string "password_digest", null: false
+    t.string "password_digest"
     t.integer "role", default: 0, null: false
     t.datetime "last_sign_in_at"
     t.integer "sign_in_count", default: 0, null: false
@@ -101,6 +112,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000001) do
 
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "consents", "users", on_delete: :cascade
+  add_foreign_key "identities", "users"
   add_foreign_key "notes", "users"
   add_foreign_key "refresh_tokens", "users", on_delete: :cascade
 end
