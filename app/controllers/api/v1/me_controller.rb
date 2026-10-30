@@ -50,9 +50,12 @@ module Api
         require_reauthentication!
         require_second_factor!
 
+        apple_revoked = revoke_apple_token
         current_user.anonymize!
         ::Auth::TokenDenylist.add(current_token_payload["jti"], current_token_payload["exp"])
-        AuditLog.record!("user.anonymized", target: current_user, metadata: { by: "self" })
+        metadata = { by: "self" }
+        metadata[:apple_token_revoked] = apple_revoked unless apple_revoked.nil?
+        AuditLog.record!("user.anonymized", target: current_user, metadata: metadata)
         clear_refresh_cookie
         head :no_content
       end
@@ -64,6 +67,12 @@ module Api
       end
 
       private
+
+      def revoke_apple_token
+        return unless params[:apple_authorization_code].present? && current_user.identities.exists?(provider: "apple")
+
+        ::Auth::Oauth::AppleRevoker.call(authorization_code: params[:apple_authorization_code].to_s, client_id: params[:apple_client_id].to_s)
+      end
 
       def profile_params
         params.permit(:first_name, :last_name, :phone)
