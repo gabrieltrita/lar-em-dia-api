@@ -32,6 +32,8 @@ info:
     | `invalid_confirmation_token` | 401 | Bad or expired email confirmation link |
     | `invalid_email_change_token` | 401 | Bad or expired email change link |
     | `invalid_reset_token` | 401 | Bad or expired password reset link |
+    | `oauth_token_invalid` | 401 | Provider ID token is invalid, expired or for another client |
+    | `oauth_email_unverified` | 401 | Provider says the email is not verified |
     | `email_not_confirmed` | 403 | Correct password but email not confirmed yet |
     | `forbidden` | 403 | Not allowed |
     | `two_factor_setup_required` | 403 | Admin must enable 2FA first |
@@ -45,6 +47,7 @@ info:
     | `consent_required` | 422 | Required consent cannot be revoked |
     | `rate_limited` | 429 | Too many requests, see `Retry-After` |
     | `internal_error` | 500 | Unexpected error |
+    | `oauth_provider_unavailable` | 503 | The provider's signing keys could not be fetched |
 
     Validation `details` codes include Rails defaults (`blank`, `invalid`, `too_short`, `too_long`, `confirmation`, `inclusion`)
     plus `weak_password`, `required` and `same_as_current`.
@@ -246,6 +249,46 @@ paths:
         "200": { $ref: "#/components/responses/Message" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
+  /auth/oauth/google:
+    post:
+      tags: [Auth]
+      summary: Log in, link or sign up with a Google ID token
+      description: |
+        Known Google account logs in; the same email as an existing account links the identity (an unconfirmed account loses its password and sessions first); a new email creates a confirmed account.
+        `accept_terms` and `accept_privacy` are required only when an account is created. An account with 2FA gets the usual `challenge_token`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+                accept_terms: { type: boolean }
+                accept_privacy: { type: boolean }
+                accept_marketing: { type: boolean }
+      responses:
+        "200":
+          description: Session created or 2FA pending
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/SessionResponse"
+                  - $ref: "#/components/schemas/TwoFactorChallengeResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: Google's signing keys could not be fetched (`oauth_provider_unavailable`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /me:
     get:
       tags: [Me]

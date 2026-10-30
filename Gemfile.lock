@@ -75,6 +75,8 @@ GEM
       securerandom (>= 0.3)
       tzinfo (~> 2.0, >= 2.0.5)
       uri (>= 0.13.1)
+    addressable (2.9.1)
+      public_suffix (>= 2.0.2, < 8.0)
     ast (2.4.3)
     base64 (0.3.0)
     bcrypt (3.1.22)
@@ -90,6 +92,9 @@ GEM
       thor (~> 1.0)
     concurrent-ruby (1.3.8)
     connection_pool (3.0.2)
+    crack (1.0.1)
+      bigdecimal
+      rexml
     crass (1.0.8)
     cronex (0.15.0)
       tzinfo
@@ -121,6 +126,7 @@ GEM
     globalid (1.4.0)
       activesupport (>= 6.1)
     hana (1.3.7)
+    hashdiff (1.2.1)
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
     io-console (0.9.4)
@@ -211,6 +217,7 @@ GEM
       prettyprint
     prettyprint (0.2.1)
     prism (1.9.0)
+    public_suffix (7.0.5)
     puma (8.0.2)
       nio4r (~> 2.0)
     pundit (2.5.2)
@@ -280,6 +287,7 @@ GEM
       io-console (~> 0.5)
     request_store (1.7.0)
       rack (>= 1.4)
+    rexml (3.4.4)
     rotp (6.3.0)
     rspec-core (3.13.6)
       rspec-support (~> 3.13.0)
@@ -364,6 +372,10 @@ GEM
     unicode-emoji (4.3.0)
     uri (1.1.2)
     useragent (0.16.11)
+    webmock (3.34.0)
+      addressable (>= 2.8.0)
+      crack (>= 0.3.2)
+      hashdiff (>= 0.4.0, < 2.0.0)
     websocket-driver (0.8.2)
       base64
       websocket-extensions (>= 0.1.0)
@@ -416,6 +428,7 @@ DEPENDENCIES
   sidekiq-cron (~> 2.0)
   simplecov
   tzinfo-data
+  webmock (~> 3.34)
 
 BUNDLED WITH
    2.5.11

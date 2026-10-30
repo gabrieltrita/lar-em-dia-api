@@ -26,11 +26,22 @@ module TokenResponder
     }, status: status
   end
 
-  def sign_in_and_render(user, two_factor: false)
+  def sign_in_or_challenge(user, provider: nil)
+    return sign_in_and_render(user, provider: provider) unless user.two_factor_enabled?
+
+    user.reset_failed_logins!
+    render json: {
+      data: { two_factor_required: true, challenge_token: Auth::TwoFactorChallenge.issue(user), expires_in: Auth::TwoFactorChallenge::TTL.to_i }
+    }
+  end
+
+  def sign_in_and_render(user, two_factor: false, provider: nil)
     user.reset_failed_logins!
     user.track_sign_in!
     Current.user = user
-    AuditLog.record!("auth.login", target: user, actor: user, metadata: { two_factor: two_factor })
+    metadata = { two_factor: two_factor }
+    metadata[:provider] = provider if provider
+    AuditLog.record!("auth.login", target: user, actor: user, metadata: metadata)
     render_session(user, Auth::TokenIssuer.call(user, request: request))
   end
 

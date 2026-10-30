@@ -25,14 +25,7 @@ module Api
                                 message: "Confirm your email before logging in. You can request a new link.")
           end
 
-          if user.two_factor_enabled?
-            user.reset_failed_logins!
-            return render json: {
-              data: { two_factor_required: true, challenge_token: ::Auth::TwoFactorChallenge.issue(user), expires_in: ::Auth::TwoFactorChallenge::TTL.to_i }
-            }
-          end
-
-          sign_in_and_render(user)
+          sign_in_or_challenge(user)
         end
 
         def destroy

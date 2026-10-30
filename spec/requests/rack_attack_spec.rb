@@ -29,6 +29,12 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
     expect(response).to have_http_status(:too_many_requests)
   end
 
+  it "throttles social login by IP" do
+    10.times { post "/api/v1/auth/oauth/google", params: { id_token: "x" }, as: :json, env: { "REMOTE_ADDR" => "10.3.3.3" } }
+    post "/api/v1/auth/oauth/google", params: { id_token: "x" }, as: :json, env: { "REMOTE_ADDR" => "10.3.3.3" }
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
   it "throttles second factor attempts" do
     5.times { post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" } }
     post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" }

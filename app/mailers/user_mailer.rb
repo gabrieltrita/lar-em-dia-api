@@ -30,6 +30,13 @@ class UserMailer < ApplicationMailer
     mail to: @user.email, subject: "Your password was changed"
   end
 
+  def identity_linked(identity)
+    @user = identity.user
+    @provider = identity.provider.titleize
+    @forgot_url = frontend_url("/forgot-password")
+    mail to: @user.email, subject: "A #{@provider} account was linked to your account"
+  end
+
   def email_change_confirmation(user)
     @user = user
     @url = frontend_url("/confirm-email-change?token=#{CGI.escape(user.generate_token_for(:email_change))}")

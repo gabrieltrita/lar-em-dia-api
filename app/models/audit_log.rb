@@ -7,7 +7,7 @@ class AuditLog < ApplicationRecord
     user.email_change_requested user.email_changed user.unlocked
     user.data_exported user.consent_changed
     two_factor.enabled two_factor.disabled two_factor.reset two_factor.backup_codes_regenerated
-    session.revoked identity.unlinked
+    session.revoked identity.linked identity.unlinked
   ].freeze
 
   belongs_to :actor, class_name: "User", optional: true
