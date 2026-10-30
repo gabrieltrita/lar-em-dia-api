@@ -25,6 +25,7 @@ Rails.application.routes.draw do
         post   "email/confirm",   to: "confirmations#email_change"
         post   "password/forgot", to: "passwords#forgot"
         post   "password/reset",  to: "passwords#reset"
+        post   "oauth/google",    to: "oauth#google"
       end
 
       resource :me, only: %i[show update destroy], controller: :me do

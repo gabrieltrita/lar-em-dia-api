@@ -127,7 +127,7 @@ Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (re
 
 `Dockerfile` (multi-stage, non-root) is for production; `Dockerfile.dev` is used by docker-compose.
 
-The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`.
+The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login).
 
 Logs go to stdout as one JSON object per line. Each request is a single line (lograge) with `time`, `level`, `method`, `path`, `controller`, `action`, `status`, `duration`, `db`, `view`, `request_id`, `user_id` and, on errors, the exception class:
 
@@ -361,7 +361,7 @@ Supported types: `string`, `text`, `integer`, `float`, `decimal`, `boolean`, `da
 
 ### 19. Social identities and passwordless accounts
 
-An account can be linked to Google or Apple identities and can have no password at all (the login endpoints arrive in the next phase).
+An account can be linked to Google or Apple identities and can have no password at all.
 
 ```http
 GET    /me/identities                                   -> linked providers (id, provider, email_at_link, created_at)
@@ -374,3 +374,18 @@ DELETE /me/identities/:id { "current_password": "..." } -> 204
 - The only way to log in cannot be removed: the request fails with `last_login_method` (422).
 - Each user can link one identity per provider, and a provider account can belong to one user. The provider's user id is encrypted deterministically (lookup and unique index) and is never returned by the API or the data export; the linked email is encrypted too.
 - Identities are listed in `User::PERSONAL_DATA`: they appear in the data export under `content.identities` and are destroyed on anonymization. Unlinking is audited as `identity.unlinked`.
+
+#### Login with Google
+
+```http
+POST /auth/oauth/google { "id_token": "...", "accept_terms": true, "accept_privacy": true, "accept_marketing": false }
+```
+
+The front end (Google Identity Services on the web, the SDK on mobile) obtains the Google **ID token** and sends it here; the API never redirects. The API checks the signature against Google's keys (cached), the issuer, that the audience is one of `GOOGLE_CLIENT_IDS`, the expiry and that the email is verified. The response is the same as the password login (body or cookie mode).
+
+- Known Google account: logs in.
+- Same email as a confirmed account: the identity is linked, the owner is emailed and audited as `identity.linked`.
+- Same email as an **unconfirmed** account (possible pre-registration by someone else): the identity is linked, the password and every session of that account are discarded and the email is marked confirmed.
+- New email: creates a confirmed account without a password. `accept_terms` and `accept_privacy` are required in this case only (`validation_failed`, `details.accept_terms[].code = required`).
+- 2FA still applies: an account with 2FA gets the usual `challenge_token`.
+- Errors: `oauth_token_invalid` (401), `oauth_email_unverified` (401), `oauth_provider_unavailable` (503, Google's keys could not be fetched). Throttled to 10 requests per minute per IP.

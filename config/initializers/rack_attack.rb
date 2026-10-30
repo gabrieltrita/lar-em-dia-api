@@ -54,6 +54,10 @@ class Rack::Attack
     req.ip if req.path == "/api/v1/auth/two_factor" && req.post?
   end
 
+  throttle("auth/oauth/ip", limit: 10, period: 1.minute) do |req|
+    req.ip if req.path.start_with?("/api/v1/auth/oauth/") && req.post?
+  end
+
   throttle("auth/refresh/ip", limit: 30, period: 1.minute) do |req|
     req.ip if req.path == "/api/v1/auth/refresh" && req.post?
   end

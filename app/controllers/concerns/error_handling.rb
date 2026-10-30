@@ -10,6 +10,7 @@ module ErrorHandling
     rescue_from ActionDispatch::Http::Parameters::ParseError, with: :handle_bad_request
     rescue_from Auth::Unauthorized, with: :handle_unauthorized
     rescue_from Auth::ReauthenticationFailed, with: :handle_reauthentication_failed
+    rescue_from Auth::ProviderUnavailable, with: :handle_provider_unavailable
   end
 
   private
@@ -61,6 +62,10 @@ module ErrorHandling
 
   def handle_reauthentication_failed(error)
     render_error(status: :unprocessable_content, code: error.code, message: error.message)
+  end
+
+  def handle_provider_unavailable(error)
+    render_error(status: :service_unavailable, code: "oauth_provider_unavailable", message: error.message)
   end
 
   def handle_internal_error(error)

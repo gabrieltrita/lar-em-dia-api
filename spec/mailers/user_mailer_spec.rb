@@ -106,4 +106,14 @@ RSpec.describe UserMailer, type: :mailer do
     expect(mail.subject).to eq("Two-factor authentication disabled")
     expect(text_of(mail)).to include("#{frontend}/forgot-password")
   end
+
+  it "tells the owner a social identity was linked" do
+    identity = create(:identity, user: user, provider: :google)
+    mail = described_class.identity_linked(identity)
+
+    expect(mail.to).to eq([ user.email ])
+    expect(mail.subject).to eq("A Google account was linked to your account")
+    expect(text_of(mail)).to include("Google", "#{frontend}/forgot-password")
+    expect(mail.html_part.body.decoded).to include("Google")
+  end
 end
