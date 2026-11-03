@@ -13,6 +13,15 @@ RSpec.describe Category do
   it { is_expected.to allow_value("thirteenth_salary").for(:key) }
   it { is_expected.not_to allow_value("Salary", "1salary", "salary-bonus").for(:key) }
 
+  it "requires a default nature on expense categories only" do
+    expect(build(:category, :expense, default_nature: nil)).not_to be_valid
+    expect(build(:category, :expense, default_nature: "sometimes")).not_to be_valid
+
+    income = build(:category, default_nature: :fixed)
+    expect(income).not_to be_valid
+    expect(income.errors[:default_nature]).to eq([ "can only be set on expense categories" ])
+  end
+
   it "rejects an unknown kind" do
     expect(build(:category, kind: "transfer")).not_to be_valid
   end
@@ -40,6 +49,16 @@ RSpec.describe Category do
       keys = described_class.income.order(:position).pluck(:key)
       expect(keys).to eq(described_class::DEFAULTS[:income].keys.map(&:to_s))
       expect(described_class.find_by(key: "salary")).to have_attributes(name: "Salary", position: 0, active: true)
+    end
+
+    it "creates the default expense categories with their nature" do
+      described_class.seed_defaults!
+
+      keys = described_class.expense.order(:position).pluck(:key)
+      expect(keys).to eq(described_class::DEFAULTS[:expense].keys.map(&:to_s))
+      expect(described_class.find_by(key: "housing")).to have_attributes(name: "Housing", default_nature: "fixed")
+      expect(described_class.find_by(key: "groceries")).to have_attributes(name: "Groceries", default_nature: "variable")
+      expect(described_class.income.pluck(:default_nature).uniq).to eq([ nil ])
     end
 
     it "keeps changes made to an existing category" do

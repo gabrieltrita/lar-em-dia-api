@@ -51,6 +51,7 @@ module Api
       def filtered_entries
         entries = policy_scope(Entry)
         entries = entries.where(kind: params[:kind]) if Entry.kinds.key?(params[:kind])
+        entries = entries.where(nature: params[:nature]) if Entry.natures.key?(params[:nature])
         entries = entries.where(due_on: date_param(:from)..) if params[:from].present?
         entries = entries.where(due_on: ..date_param(:to)) if params[:to].present?
         entries
@@ -61,7 +62,7 @@ module Api
       end
 
       def entry_params
-        params.permit(:category_id, :description, :amount_cents, :due_on, :status, :paid_on)
+        params.permit(:category_id, :nature, :description, :amount_cents, :due_on, :status, :paid_on)
       end
     end
   end
