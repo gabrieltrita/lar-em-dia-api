@@ -17,3 +17,6 @@ if Rails.env.development? && User.user.count.zero?
   User.create!(email: test_email, first_name: "Test", last_name: "User", password: "User@123456", role: :user, confirmed_at: Time.current)
   puts "Test user created: #{test_email} / User@123456"
 end
+
+Category.seed_defaults!
+puts "Default categories ready: #{Category.count}"

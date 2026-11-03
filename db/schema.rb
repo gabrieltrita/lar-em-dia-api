@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_03_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_03_192520) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -31,6 +31,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_000001) do
     t.index ["target_type", "target_id"], name: "index_audit_logs_on_target_type_and_target_id"
   end
 
+  create_table "balances", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.bigint "amount_cents", null: false
+    t.date "as_of", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id", "as_of"], name: "index_balances_on_user_id_and_as_of", unique: true
+    t.index ["user_id"], name: "index_balances_on_user_id"
+  end
+
+  create_table "categories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "kind", null: false
+    t.string "key", null: false
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["key"], name: "index_categories_on_key", unique: true
+    t.index ["kind", "position"], name: "index_categories_on_kind_and_position"
+  end
+
   create_table "consents", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
     t.string "kind", null: false
@@ -41,6 +63,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_000001) do
     t.datetime "created_at", null: false
     t.index ["user_id", "kind", "created_at"], name: "index_consents_on_user_id_and_kind_and_created_at"
     t.index ["user_id"], name: "index_consents_on_user_id"
+  end
+
+  create_table "entries", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "category_id", null: false
+    t.string "kind", null: false
+    t.text "description", null: false
+    t.bigint "amount_cents", null: false
+    t.date "due_on", null: false
+    t.string "status", default: "pending", null: false
+    t.date "paid_on"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["category_id"], name: "index_entries_on_category_id"
+    t.index ["user_id", "due_on"], name: "index_entries_on_user_id_and_due_on"
+    t.index ["user_id", "kind", "due_on"], name: "index_entries_on_user_id_and_kind_and_due_on"
+    t.index ["user_id"], name: "index_entries_on_user_id"
   end
 
   create_table "identities", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -101,7 +140,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_000001) do
   end
 
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "balances", "users"
   add_foreign_key "consents", "users", on_delete: :cascade
+  add_foreign_key "entries", "categories"
+  add_foreign_key "entries", "users"
   add_foreign_key "identities", "users"
   add_foreign_key "refresh_tokens", "users", on_delete: :cascade
 end

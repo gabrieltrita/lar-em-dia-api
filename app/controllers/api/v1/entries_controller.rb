@@ -1,0 +1,68 @@
+module Api
+  module V1
+    class EntriesController < ApplicationController
+      include Paginatable
+
+      before_action :set_entry, only: %i[show update destroy]
+
+      def index
+        authorize Entry
+        pagy, entries = pagy(filtered_entries.chronological)
+        render json: { data: EntryBlueprint.render_as_hash(entries), meta: pagination_meta(pagy) }
+      rescue Date::Error
+        render_error(status: :bad_request, code: "invalid_date", message: "from and to must be dates (YYYY-MM-DD)")
+      end
+
+      def show
+        render json: { data: EntryBlueprint.render_as_hash(@entry) }
+      end
+
+      def create
+        entry = current_user.entries.new(entry_params)
+        authorize entry
+
+        if entry.save
+          render json: { data: EntryBlueprint.render_as_hash(entry) }, status: :created
+        else
+          render_validation_errors(entry)
+        end
+      end
+
+      def update
+        if @entry.update(entry_params)
+          render json: { data: EntryBlueprint.render_as_hash(@entry) }
+        else
+          render_validation_errors(@entry)
+        end
+      end
+
+      def destroy
+        @entry.destroy!
+        head :no_content
+      end
+
+      private
+
+      def set_entry
+        @entry = policy_scope(Entry).find(params[:id])
+        authorize @entry
+      end
+
+      def filtered_entries
+        entries = policy_scope(Entry)
+        entries = entries.where(kind: params[:kind]) if Entry.kinds.key?(params[:kind])
+        entries = entries.where(due_on: date_param(:from)..) if params[:from].present?
+        entries = entries.where(due_on: ..date_param(:to)) if params[:to].present?
+        entries
+      end
+
+      def date_param(name)
+        Date.iso8601(params[name].to_s)
+      end
+
+      def entry_params
+        params.permit(:category_id, :description, :amount_cents, :due_on, :status, :paid_on)
+      end
+    end
+  end
+end
