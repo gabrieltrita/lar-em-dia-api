@@ -5,11 +5,11 @@ RSpec.describe "Errors reported to Sentry", type: :request do
 
   it "strips the body, cookies, sensitive headers and personal data" do
     headers = auth_headers(user).merge("Cookie" => "trita_refresh=secret-cookie", "X-Token-Transport" => "cookie", "User-Agent" => "PrivateAgent/1.0", "REMOTE_ADDR" => "203.0.113.9")
-    allow_any_instance_of(Note).to receive(:save).and_raise(RuntimeError, "Duplicate for someone@example.com")
+    allow_any_instance_of(User).to receive(:update).and_raise(RuntimeError, "Duplicate for someone@example.com")
 
     with_sentry do |transport|
       expect {
-        post "/api/v1/notes", params: { title: "Private title" }, headers: headers, as: :json
+        patch "/api/v1/me", params: { first_name: "Private title" }, headers: headers, as: :json
       }.to raise_error(RuntimeError)
 
       event = transport.events.sole
@@ -23,10 +23,11 @@ RSpec.describe "Errors reported to Sentry", type: :request do
   end
 
   it "never collects the query string" do
-    allow(NoteBlueprint).to receive(:render_as_hash).and_raise(RuntimeError, "boom")
+    admin = create(:user, :admin)
+    allow(UserBlueprint).to receive(:render_as_hash).and_raise(RuntimeError, "boom")
 
     with_sentry do |transport|
-      expect { get "/api/v1/notes?page=someone@example.com", headers: auth_headers(user) }.to raise_error(RuntimeError)
+      expect { get "/api/v1/admin/users?page=someone@example.com", headers: auth_headers(admin) }.to raise_error(RuntimeError)
 
       event = transport.events.sole
       expect(event.request.query_string).to be_nil

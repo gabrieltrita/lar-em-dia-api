@@ -12,7 +12,7 @@ Bundler.require(*Rails.groups)
 
 require_relative "../lib/json_log_formatter"
 
-module TritaApi
+module LaremdiaApi
   class Application < Rails::Application
     config.load_defaults 8.1
 

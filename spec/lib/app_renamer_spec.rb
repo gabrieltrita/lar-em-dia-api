@@ -34,7 +34,7 @@ RSpec.describe AppRenamer do
     expect(YAML.safe_load(read("config/app.yml"))).to eq("shared" => { "name" => "Zetaapp", "slug" => "zetaapp", "domain" => "zetaapp.dev" })
     expect(read("config/application.rb")).to include("module ZetaappApi")
     expect(read("docker-compose.yml")).to start_with("name: zetaapp\n").and include("image: zetaapp-api:dev")
-    expect(read("README.md")).to start_with("# zetaapp-api\n").and include("the Zetaapp apps", "**zetaapp-web**", "`zetaapp_refresh`", "`zetaapp_api_development`", "`zetaapp.dev`")
+    expect(read("README.md")).to start_with("# zetaapp-api\n").and include("for **Zetaapp**", "`zetaapp_refresh`", "`zetaapp_api_development`", "`zetaapp.dev`")
     expect(read("docs/openapi.yaml")).to include("title: zetaapp-api", "`zetaapp_refresh` for this app")
     expect(read(".claude/CLAUDE.md")).to include("`ZetaappApi` module name")
   end
@@ -56,7 +56,7 @@ RSpec.describe AppRenamer do
     rename("minhaloja", name: "Minha Loja: Centro", domain: "minhaloja.com.br")
 
     expect(YAML.safe_load(read("config/app.yml")).dig("shared", "name")).to eq("Minha Loja: Centro")
-    expect(read("README.md")).to include("`minhaloja.com.br`", "the Minha Loja: Centro apps")
+    expect(read("README.md")).to include("`minhaloja.com.br`", "for **Minha Loja: Centro**")
     expect(read("README.md")).not_to include("minhaloja.dev")
   end
 

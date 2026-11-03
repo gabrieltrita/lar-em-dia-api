@@ -162,16 +162,6 @@ RSpec.describe User do
       expect(user.identities).to be_empty
       expect(Identity.exists?(other.id)).to be(true)
     end
-
-    it "deletes the content listed in PERSONAL_DATA" do
-      create_list(:note, 2, user: user)
-      other = create(:note)
-
-      user.anonymize!
-
-      expect(user.notes).to be_empty
-      expect(Note.exists?(other.id)).to be(true)
-    end
   end
 
   describe "2FA" do

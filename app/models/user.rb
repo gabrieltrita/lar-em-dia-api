@@ -8,13 +8,12 @@ class User < ApplicationRecord
   BASE_LOCK_DURATION = 15.minutes
   MAX_LOCK_DURATION = 24.hours
 
-  PERSONAL_DATA = %i[notes identities].freeze
+  PERSONAL_DATA = %i[identities].freeze
 
   has_secure_password reset_token: false, validations: false
 
   has_many :refresh_tokens, dependent: :delete_all
   has_many :consents, dependent: :delete_all
-  has_many :notes, dependent: :destroy
   has_many :identities, dependent: :destroy
 
   encrypts :email, deterministic: true, downcase: true
