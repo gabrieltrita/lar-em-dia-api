@@ -92,9 +92,10 @@ app/
     api/v1/auth/     register, confirm, login, two_factor, refresh, logout, passwords
     api/v1/me/       sessions, two_factor, consents, identities
     api/v1/admin/    users, audit_logs
+    api/v1/          categories, balances, entries (Lar em Dia)
   jobs/              MaintenanceCleanupJob
   mailers/           UserMailer
-  models/            User, RefreshToken, AuditLog, Consent, Identity, Current
+  models/            User, RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry
   policies/          Pundit
   services/auth/     JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge
 bin/rename           renames the app after forking (see App identity)
@@ -440,3 +441,23 @@ Same flow, rules and errors as Google, with the Apple identity token. Difference
   ```
 
   Revocation is best effort and never blocks the deletion: the audit entry `user.anonymized` records `apple_token_revoked` as `true` or `false` (it is absent when the user has no Apple identity or sent no code). Deletions made by an admin cannot revoke anything.
+
+### 19. Categories, balances and entries (Lar em Dia)
+
+```http
+GET    /categories?kind=income                     -> active categories by kind and position
+GET    /balances?page=1&limit=20                   -> most recent date first
+POST   /balances { "amount_cents": -12345, "as_of": "2026-11-03" }
+PATCH  /balances/:id
+DELETE /balances/:id
+GET    /entries?from=2026-11-01&to=2026-11-30&kind=income&page=1&limit=100
+POST   /entries { "category_id": "...", "description": "November salary", "amount_cents": 650000, "due_on": "2026-11-05", "status": "pending" }
+PATCH  /entries/:id { "status": "paid", "paid_on": "2026-11-05" }
+DELETE /entries/:id
+```
+
+- Money is always integer cents (BRL). A balance may be negative; an entry amount is positive and its sign comes from its kind.
+- **Categories** are a global catalog. `Category.seed_defaults!` (run by `db:seed`, idempotent and keeping later edits) creates the income categories `salary`, `thirteenth_salary`, `vacation_bonus`, `bonus`, `extra_income`, `rent_received`, `alimony_received`, `tax_refund`, `reimbursement` and `other_income`. Clients label categories by `key`; `name` is the English label. Inactive categories are hidden and cannot be used by new entries, and a category in use cannot be deleted.
+- **Balances** anchor the projection: an amount on a date (today or the past, one per date per user; otherwise `in_future` or `taken`).
+- **Entries** are one income or expense on a due date. `kind` is copied from the category, so clients never send it. `status` is `pending` (default) or `paid`; `paid_on` is only accepted when paid (`only_when_paid`). `from`/`to` filter by due date (inclusive) and a malformed date answers `400 invalid_date`. The description is encrypted at rest and filtered from logs; amounts and dates stay queryable for projections.
+- Each record belongs to the current user (another user's id answers 404, also for admins). Balances and entries are listed in `User::PERSONAL_DATA`: exported under `content.balances` and `content.entries` and deleted on anonymization.

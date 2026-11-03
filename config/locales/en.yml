@@ -15,3 +15,13 @@ en:
           attributes:
             password:
               weak_password: "must include uppercase, lowercase letters and numbers"
+        balance:
+          attributes:
+            as_of:
+              in_future: "cannot be in the future"
+        entry:
+          attributes:
+            paid_on:
+              only_when_paid: "can only be set when the entry is paid"
+            category:
+              inactive: "is no longer available"

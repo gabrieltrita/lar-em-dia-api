@@ -20,6 +20,7 @@ info:
     |---|---|---|
     | `validation_failed` | 422 | Invalid payload, see `details` |
     | `bad_request` | 400 | Missing parameter or malformed JSON |
+    | `invalid_date` | 400 | A date query parameter is not `YYYY-MM-DD` |
     | `missing_token` | 401 | No `Authorization` header |
     | `invalid_token` | 401 | Invalid, expired or wrong-type token |
     | `token_revoked` | 401 | Access token revoked by logout |
@@ -53,13 +54,20 @@ info:
     | `oauth_provider_unavailable` | 503 | The provider's signing keys could not be fetched |
 
     Validation `details` codes include Rails defaults (`blank`, `invalid`, `too_short`, `too_long`, `confirmation`, `inclusion`)
-    plus `weak_password`, `required` and `same_as_current`.
+    plus `weak_password`, `required`, `same_as_current`, `taken`, `greater_than`, `not_an_integer`, `in_future` (balance date),
+    `only_when_paid` (entry `paid_on` while pending) and `inactive` (category no longer offered).
 servers:
   - url: /api/v1
 tags:
   - name: Auth
   - name: Me
   - name: Admin
+  - name: Categories
+    description: Catalog of income and expense categories. Clients label them by `key`.
+  - name: Balances
+    description: Anchor balances (amount at a date) that projections start from. Amounts are integer cents (BRL).
+  - name: Entries
+    description: Income and expenses on a date. Amounts are positive integer cents (BRL); the kind comes from the category.
 paths:
   /auth/register:
     post:
@@ -446,6 +454,8 @@ paths:
                     description: Personal content listed in User::PERSONAL_DATA, one key per association
                     properties:
                       identities: { type: array, items: { $ref: "#/components/schemas/Identity" } }
+                      balances: { type: array, items: { $ref: "#/components/schemas/Balance" } }
+                      entries: { type: array, items: { $ref: "#/components/schemas/Entry" } }
   /me/sessions:
     get:
       tags: [Me]
@@ -786,6 +796,153 @@ paths:
                     items: { $ref: "#/components/schemas/AuditLog" }
                   meta: { $ref: "#/components/schemas/Pagination" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List the active categories, by kind and position
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [income, expense] } }
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Category" }
+  /balances:
+    get:
+      tags: [Balances]
+      summary: List the current user's balances, most recent date first
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of balances
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Balance" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+    post:
+      tags: [Balances]
+      summary: Create a balance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BalanceInput" }
+      responses:
+        "201": { $ref: "#/components/responses/Balance" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /balances/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Balances]
+      summary: Show a balance
+      description: Another user's record answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/Balance" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Balances]
+      summary: Update a balance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BalanceInput" }
+      responses:
+        "200": { $ref: "#/components/responses/Balance" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Balances]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/Balance" }
+    delete:
+      tags: [Balances]
+      summary: Delete a balance
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /entries:
+    get:
+      tags: [Entries]
+      summary: List the current user's entries by due date
+      parameters:
+        - { name: from, in: query, description: First due date included, schema: { type: string, format: date } }
+        - { name: to, in: query, description: Last due date included, schema: { type: string, format: date } }
+        - { name: kind, in: query, schema: { type: string, enum: [income, expense] } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Entry" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Entries]
+      summary: Create an entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EntryInput" }
+      responses:
+        "201": { $ref: "#/components/responses/Entry" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /entries/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Entries]
+      summary: Show an entry
+      description: Another user's record answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/Entry" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Entries]
+      summary: Update an entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EntryInput" }
+      responses:
+        "200": { $ref: "#/components/responses/Entry" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Entries]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/Entry" }
+    delete:
+      tags: [Entries]
+      summary: Delete an entry
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
 security:
   - bearerAuth: []
 components:
@@ -929,6 +1086,51 @@ components:
         user_agent: { type: [string, "null"] }
         request_id: { type: [string, "null"] }
         created_at: { type: string, format: date-time }
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [income, expense] }
+        key: { type: string, example: salary }
+        name: { type: string, example: Salary }
+        position: { type: integer }
+    Balance:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        amount_cents: { type: integer, description: May be negative }
+        as_of: { type: string, format: date }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    BalanceInput:
+      type: object
+      required: [amount_cents, as_of]
+      properties:
+        amount_cents: { type: integer }
+        as_of: { type: string, format: date, description: Today or a past date }
+    Entry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [income, expense] }
+        category_id: { type: string, format: uuid }
+        description: { type: string, maxLength: 200 }
+        amount_cents: { type: integer, minimum: 1 }
+        due_on: { type: string, format: date }
+        status: { type: string, enum: [pending, paid] }
+        paid_on: { type: [string, "null"], format: date }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    EntryInput:
+      type: object
+      required: [category_id, description, amount_cents, due_on]
+      properties:
+        category_id: { type: string, format: uuid }
+        description: { type: string, maxLength: 200 }
+        amount_cents: { type: integer, minimum: 1 }
+        due_on: { type: string, format: date }
+        status: { type: string, enum: [pending, paid], default: pending }
+        paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
     Pagination:
       type: object
       properties:
@@ -956,6 +1158,22 @@ components:
         provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
         id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
+    Entry:
+      description: Entry
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/Entry" }
+    Balance:
+      description: Balance
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: "#/components/schemas/Balance" }
     Session:
       description: Session created
       content:
