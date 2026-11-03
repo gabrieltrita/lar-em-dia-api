@@ -7,6 +7,7 @@ FactoryBot.define do
 
     trait :expense do
       kind { :expense }
+      default_nature { :variable }
     end
 
     trait :inactive do

@@ -15,6 +15,10 @@ en:
           attributes:
             password:
               weak_password: "must include uppercase, lowercase letters and numbers"
+        category:
+          attributes:
+            default_nature:
+              only_for_expenses: "can only be set on expense categories"
         balance:
           attributes:
             as_of:
@@ -25,3 +29,5 @@ en:
               only_when_paid: "can only be set when the entry is paid"
             category:
               inactive: "is no longer available"
+            nature:
+              only_for_expenses: "can only be set on expenses"

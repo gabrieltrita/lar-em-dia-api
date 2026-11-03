@@ -33,6 +33,22 @@ RSpec.describe "Entries", type: :request do
       expect(json["data"]).to include("status" => "paid", "paid_on" => "2026-11-04")
     end
 
+    it "gives an expense its category's default nature unless one is sent" do
+      groceries = create(:category, :expense, key: "groceries")
+      post "/api/v1/entries", params: valid_params.merge(category_id: groceries.id), headers: headers, as: :json
+      expect(json["data"]).to include("kind" => "expense", "nature" => "variable")
+
+      post "/api/v1/entries", params: valid_params.merge(category_id: groceries.id, nature: "fixed"), headers: headers, as: :json
+      expect(json["data"]).to include("nature" => "fixed")
+    end
+
+    it "rejects a nature on income" do
+      post "/api/v1/entries", params: valid_params.merge(nature: "fixed"), headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json.dig("error", "details", "nature", 0, "code")).to eq("only_for_expenses")
+    end
+
     it "returns per-field errors" do
       post "/api/v1/entries", params: valid_params.merge(amount_cents: 0, paid_on: "2026-11-04", category_id: nil), headers: headers, as: :json
 
@@ -62,7 +78,13 @@ RSpec.describe "Entries", type: :request do
       get "/api/v1/entries", params: { from: "2026-11-01", to: "2026-11-30", kind: "income" }, headers: headers
       expect(json["data"].map { |entry| entry["id"] }).to eq([ november_salary.id, bonus.id ])
 
-      get "/api/v1/entries", params: { kind: "unknown", limit: 2 }, headers: headers
+      get "/api/v1/entries", params: { nature: "variable" }, headers: headers
+      expect(json["data"].map { |entry| entry["id"] }).to eq([ november_rent.id ])
+
+      get "/api/v1/entries", params: { nature: "fixed" }, headers: headers
+      expect(json["data"]).to be_empty
+
+      get "/api/v1/entries", params: { kind: "unknown", nature: "unknown", limit: 2 }, headers: headers
       expect(json["data"].map { |entry| entry["id"] }).to eq([ before_period.id, november_salary.id ])
       expect(json["meta"]).to include("total" => 5, "next" => 2)
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_03_192520) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_03_230010) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -49,6 +49,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_192520) do
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "default_nature"
     t.index ["key"], name: "index_categories_on_key", unique: true
     t.index ["kind", "position"], name: "index_categories_on_kind_and_position"
   end
@@ -76,6 +77,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_192520) do
     t.date "paid_on"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "nature"
     t.index ["category_id"], name: "index_entries_on_category_id"
     t.index ["user_id", "due_on"], name: "index_entries_on_user_id_and_due_on"
     t.index ["user_id", "kind", "due_on"], name: "index_entries_on_user_id_and_kind_and_due_on"

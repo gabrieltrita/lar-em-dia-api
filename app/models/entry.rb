@@ -4,15 +4,19 @@ class Entry < ApplicationRecord
 
   enum :kind, { income: "income", expense: "expense" }, validate: true
   enum :status, { pending: "pending", paid: "paid" }, default: :pending, validate: true
+  enum :nature, { fixed: "fixed", variable: "variable" }, validate: { allow_nil: true }
 
   encrypts :description
 
   before_validation :copy_kind_from_category
+  before_validation :default_nature_from_category
 
   validates :description, presence: true, length: { maximum: 200 }
   validates :amount_cents, presence: true, numericality: { only_integer: true, greater_than: 0 }
   validates :due_on, presence: true
   validates :paid_on, absence: { message: :only_when_paid }, unless: :paid?
+  validates :nature, presence: true, if: :expense?
+  validates :nature, absence: { message: :only_for_expenses }, if: :income?
   validate :category_active, if: :category_id_changed?
 
   scope :chronological, -> { order(:due_on, :created_at) }
@@ -21,6 +25,10 @@ class Entry < ApplicationRecord
 
   def copy_kind_from_category
     self.kind = category.kind if category
+  end
+
+  def default_nature_from_category
+    self.nature ||= category&.default_nature if expense?
   end
 
   def category_active

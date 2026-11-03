@@ -21,6 +21,8 @@ info:
     | `validation_failed` | 422 | Invalid payload, see `details` |
     | `bad_request` | 400 | Missing parameter or malformed JSON |
     | `invalid_date` | 400 | A date query parameter is not `YYYY-MM-DD` |
+    | `invalid_month` | 400 | A month query parameter is not `YYYY-MM` |
+    | `invalid_months` | 400 | `months` is not an integer from 1 to 24 |
     | `missing_token` | 401 | No `Authorization` header |
     | `invalid_token` | 401 | Invalid, expired or wrong-type token |
     | `token_revoked` | 401 | Access token revoked by logout |
@@ -55,7 +57,8 @@ info:
 
     Validation `details` codes include Rails defaults (`blank`, `invalid`, `too_short`, `too_long`, `confirmation`, `inclusion`)
     plus `weak_password`, `required`, `same_as_current`, `taken`, `greater_than`, `not_an_integer`, `in_future` (balance date),
-    `only_when_paid` (entry `paid_on` while pending) and `inactive` (category no longer offered).
+    `only_when_paid` (entry `paid_on` while pending), `inactive` (category no longer offered) and `only_for_expenses`
+    (`nature` on an income entry).
 servers:
   - url: /api/v1
 tags:
@@ -67,7 +70,10 @@ tags:
   - name: Balances
     description: Anchor balances (amount at a date) that projections start from. Amounts are integer cents (BRL).
   - name: Entries
-    description: Income and expenses on a date. Amounts are positive integer cents (BRL); the kind comes from the category.
+    description: Income and expenses on a date. Amounts are positive integer cents (BRL); the kind comes from the category, and an expense's
+      nature (fixed or variable) defaults to the category's `default_nature`.
+  - name: Projection
+    description: Month by month balance projection built from the latest balance and the entries' due dates.
 paths:
   /auth/register:
     post:
@@ -884,6 +890,7 @@ paths:
         - { name: from, in: query, description: First due date included, schema: { type: string, format: date } }
         - { name: to, in: query, description: Last due date included, schema: { type: string, format: date } }
         - { name: kind, in: query, schema: { type: string, enum: [income, expense] } }
+        - { name: nature, in: query, schema: { type: string, enum: [fixed, variable] } }
         - { name: page, in: query, schema: { type: integer } }
         - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
       responses:
@@ -943,6 +950,27 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/NotFound" }
+  /projection:
+    get:
+      tags: [Projection]
+      summary: Project the balance at the end of each month
+      description: |
+        The anchor is the most recent balance; without one it is zero and `anchor` is null. A month closes at the anchor
+        plus income minus expenses due between the anchor date and the month's last day (worked backwards for months
+        before the anchor). Pending and paid entries both count, by due date.
+      parameters:
+        - { name: from, in: query, description: First month; defaults to the current month, schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" } }
+        - { name: months, in: query, description: Number of months, schema: { type: integer, minimum: 1, maximum: 24, default: 12 } }
+      responses:
+        "200":
+          description: Month by month projection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Projection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 security:
   - bearerAuth: []
 components:
@@ -1094,6 +1122,7 @@ components:
         key: { type: string, example: salary }
         name: { type: string, example: Salary }
         position: { type: integer }
+        default_nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expense categories only }
     Balance:
       type: object
       properties:
@@ -1113,6 +1142,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         kind: { type: string, enum: [income, expense] }
+        nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expenses only }
         category_id: { type: string, format: uuid }
         description: { type: string, maxLength: 200 }
         amount_cents: { type: integer, minimum: 1 }
@@ -1126,11 +1156,36 @@ components:
       required: [category_id, description, amount_cents, due_on]
       properties:
         category_id: { type: string, format: uuid }
+        nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expenses only; defaults to the category's default_nature }
         description: { type: string, maxLength: 200 }
         amount_cents: { type: integer, minimum: 1 }
         due_on: { type: string, format: date }
         status: { type: string, enum: [pending, paid], default: pending }
         paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
+    Projection:
+      type: object
+      required: [anchor, months]
+      properties:
+        anchor:
+          type: [object, "null"]
+          required: [amount_cents, as_of]
+          properties:
+            amount_cents: { type: integer }
+            as_of: { type: string, format: date }
+        months:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectionMonth" }
+    ProjectionMonth:
+      type: object
+      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents]
+      properties:
+        month: { type: string, example: "2026-11" }
+        opening_cents: { type: integer }
+        income_cents: { type: integer }
+        expense_cents: { type: integer }
+        fixed_expense_cents: { type: integer }
+        variable_expense_cents: { type: integer }
+        closing_cents: { type: integer, description: May be negative }
     Pagination:
       type: object
       properties:

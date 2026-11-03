@@ -19,6 +19,7 @@ RSpec.describe "Categories", type: :request do
     expect(response).to have_http_status(:ok)
     expect(json["data"].map { |category| category["id"] }).to eq([ rent.id, salary.id, bonus.id ])
     expect(json["data"].last).to include("kind" => "income", "key" => "bonus", "name" => "Category", "position" => 1)
+    expect(json["data"].first).to include("kind" => "expense", "default_nature" => "variable")
   end
 
   it "filters by kind and ignores an unknown kind" do

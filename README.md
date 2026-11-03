@@ -442,7 +442,7 @@ Same flow, rules and errors as Google, with the Apple identity token. Difference
 
   Revocation is best effort and never blocks the deletion: the audit entry `user.anonymized` records `apple_token_revoked` as `true` or `false` (it is absent when the user has no Apple identity or sent no code). Deletions made by an admin cannot revoke anything.
 
-### 19. Categories, balances and entries (Lar em Dia)
+### 19. Categories, balances, entries and projection (Lar em Dia)
 
 ```http
 GET    /categories?kind=income                     -> active categories by kind and position
@@ -450,14 +450,16 @@ GET    /balances?page=1&limit=20                   -> most recent date first
 POST   /balances { "amount_cents": -12345, "as_of": "2026-11-03" }
 PATCH  /balances/:id
 DELETE /balances/:id
-GET    /entries?from=2026-11-01&to=2026-11-30&kind=income&page=1&limit=100
+GET    /entries?from=2026-11-01&to=2026-11-30&kind=expense&nature=fixed&page=1&limit=100
 POST   /entries { "category_id": "...", "description": "November salary", "amount_cents": 650000, "due_on": "2026-11-05", "status": "pending" }
 PATCH  /entries/:id { "status": "paid", "paid_on": "2026-11-05" }
 DELETE /entries/:id
+GET    /projection?from=2026-11&months=12          -> anchor and one row per month
 ```
 
 - Money is always integer cents (BRL). A balance may be negative; an entry amount is positive and its sign comes from its kind.
-- **Categories** are a global catalog. `Category.seed_defaults!` (run by `db:seed`, idempotent and keeping later edits) creates the income categories `salary`, `thirteenth_salary`, `vacation_bonus`, `bonus`, `extra_income`, `rent_received`, `alimony_received`, `tax_refund`, `reimbursement` and `other_income`. Clients label categories by `key`; `name` is the English label. Inactive categories are hidden and cannot be used by new entries, and a category in use cannot be deleted.
+- **Categories** are a global catalog. `Category.seed_defaults!` (run by `db:seed`, idempotent and keeping later edits) creates the income categories (`salary`, `thirteenth_salary`, `vacation_bonus`, `bonus`, `extra_income`, `rent_received`, `alimony_received`, `tax_refund`, `reimbursement`, `other_income`) and the expense categories in `Category::DEFAULTS[:expense]`. Expense categories carry a `default_nature`: `fixed` for the keys in `Category::FIXED_EXPENSES` (housing, utilities, internet and phone, subscriptions, education, insurance, health plan, loans), `variable` for the rest; income categories have none. Run `bin/rails db:seed` after deploying to add new defaults. Clients label categories by `key`; `name` is the English label. Inactive categories are hidden and cannot be used by new entries, and a category in use cannot be deleted.
 - **Balances** anchor the projection: an amount on a date (today or the past, one per date per user; otherwise `in_future` or `taken`).
-- **Entries** are one income or expense on a due date. `kind` is copied from the category, so clients never send it. `status` is `pending` (default) or `paid`; `paid_on` is only accepted when paid (`only_when_paid`). `from`/`to` filter by due date (inclusive) and a malformed date answers `400 invalid_date`. The description is encrypted at rest and filtered from logs; amounts and dates stay queryable for projections.
+- **Entries** are one income or expense on a due date. `kind` is copied from the category, so clients never send it. `status` is `pending` (default) or `paid`; `paid_on` is only accepted when paid (`only_when_paid`). `from`/`to` filter by due date (inclusive) and a malformed date answers `400 invalid_date`. An expense has a `nature` (`fixed` or `variable`) that defaults to its category's `default_nature` and can be overridden; income rejects it (`only_for_expenses`). `nature` filters the list. The description is encrypted at rest and filtered from logs; amounts and dates stay queryable for projections.
+- **Projection** answers `{ "data": { "anchor": { "amount_cents", "as_of" } | null, "months": [ { "month", "opening_cents", "income_cents", "expense_cents", "fixed_expense_cents", "variable_expense_cents", "closing_cents" } ] } }`. The anchor is the most recent balance (zero and `null` without one). A month closes at the anchor plus income minus expenses due between the anchor date and the month's last day, worked backwards for months before the anchor; pending and paid entries both count by due date. `from` (`YYYY-MM`, default the current month) and `months` (1 to 24, default 12) answer `400 invalid_month` and `400 invalid_months` when malformed. The sums run in SQL (`Projection` in `app/services/projection.rb`).
 - Each record belongs to the current user (another user's id answers 404, also for admins). Balances and entries are listed in `User::PERSONAL_DATA`: exported under `content.balances` and `content.entries` and deleted on anonymization.

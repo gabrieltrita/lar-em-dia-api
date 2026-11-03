@@ -32,6 +32,32 @@ RSpec.describe Entry do
     expect(entry.errors.details[:kind]).to include(error: :inclusion, value: nil)
   end
 
+  describe "nature" do
+    let(:groceries) { create(:category, :expense, default_nature: :variable) }
+
+    it "defaults to the category's nature on expenses and keeps one that was chosen" do
+      expect(create(:entry, category: groceries)).to be_variable
+      expect(create(:entry, category: groceries, nature: :fixed)).to be_fixed
+    end
+
+    it "keeps the chosen nature when the expense moves to another category" do
+      entry = create(:entry, category: groceries, nature: :fixed)
+
+      entry.update!(category: create(:category, :expense, default_nature: :variable))
+
+      expect(entry.reload).to be_fixed
+    end
+
+    it "is required on expenses and rejected on income" do
+      expect(build(:entry, category: nil, kind: :expense)).not_to be_valid
+      expect(build(:entry, category: groceries, nature: "sometimes")).not_to be_valid
+
+      income = build(:entry, nature: :fixed)
+      expect(income).not_to be_valid
+      expect(income.errors[:nature]).to eq([ "can only be set on expenses" ])
+    end
+  end
+
   it "starts pending and rejects an unknown status" do
     expect(build(:entry)).to be_pending
     expect(build(:entry, status: "late")).not_to be_valid

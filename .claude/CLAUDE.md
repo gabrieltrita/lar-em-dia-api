@@ -20,11 +20,11 @@ API (Rails 8.1, API-only, Ruby 3.3.3) for **Lar em Dia**, a family budgeting and
 
 Families record their current or past balance, past and future income and expenses, replicate entries across months and see the projected balance month by month. The product definition (vision, personas, journeys, waves) comes from the Lean Inception of 2026-11-03.
 
-- **Category**: global catalog (`kind` income/expense, stable `key`, English `name`, `position`, `active`); `Category.seed_defaults!` creates the defaults; clients label by `key`.
+- **Category**: global catalog (`kind` income/expense, stable `key`, English `name`, `position`, `active`, `default_nature` fixed/variable on expenses only); `Category.seed_defaults!` creates the defaults; clients label by `key`.
 - **Balance**: an anchor amount at a date (current or past, one per date); projections start from the latest anchor before the period.
-- **Entry**: one income or expense on a date, with amount, status (`paid` or `pending`) and category; `kind` is copied from the category. Expenses are `fixed` (rent, utilities, streaming, card installments) or `variable` (leisure, travel). Income has a kind: salary, 13th salary, vacation bonus, bonus/profit sharing, extra income, rent received, alimony received, tax refund, reimbursement, other.
+- **Entry**: one income or expense on a date, with amount, status (`paid` or `pending`) and category; `kind` is copied from the category. Expenses have a `nature`, `fixed` (rent, utilities, streaming, card installments) or `variable` (leisure, travel), defaulting to the category's `default_nature`; income has none. Income has a kind: salary, 13th salary, vacation bonus, bonus/profit sharing, extra income, rent received, alimony received, tax refund, reimbursement, other.
 - **Entry series**: entries created together, either recurring (replicated N months backwards or forwards) or installments (fixed N, shown as "3/10"). Editing or deleting offers "only this", "this and the following" and "all".
-- **Projection**: computed on the server per month: projected balance, accumulated savings and the months that go negative. A "what if" simulation runs the same calculation with temporary entries and never persists them.
+- **Projection**: computed on the server per month (`Projection` service, `GET /projection`): projected balance, accumulated savings and the months that go negative. Every entry counts by due date, pending or paid; the anchor is the latest balance and months before it are worked backwards. A "what if" simulation runs the same calculation with temporary entries and never persists them.
 - **Due-date alerts**: a daily Sidekiq cron job emails users about pending expenses close to their due date; the app also schedules local notifications. Server push (FCM/APNs) is out of the MVP.
 - **Money** is integer cents (`amount_cents`, bigint), never floats.
 - **Privacy**: every financial record is personal data (`User::PERSONAL_DATA`). Free text (`Entry#description`) is encrypted; amounts and dates stay in clear so projections can filter and sum in SQL (owner decision, 2026-11-03). Admins never read users' entries or balances; admin features use account data and aggregated metrics only.
@@ -50,7 +50,8 @@ app/controllers/health_controller.rb GET /health (readiness, public); checks in 
 app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
 app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry
-app/controllers/api/v1/categories_controller.rb, balances_controller.rb, entries_controller.rb  Lar em Dia domain (README feature 19)
+app/controllers/api/v1/categories_controller.rb, balances_controller.rb, entries_controller.rb, projections_controller.rb  Lar em Dia domain (README feature 19)
+app/services/projection.rb month by month projection (SQL sums grouped by month, kind and nature)
 app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
 app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, OauthSignin, oauth/JwksVerifier (+ GoogleVerifier, AppleVerifier), oauth/Providers, oauth/AppleRevoker, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed/ProviderUnavailable
 app/services/user_data_export.rb
