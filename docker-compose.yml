@@ -1,10 +1,10 @@
-name: trita
+name: laremdia
 
 x-app: &app
   build:
     context: .
     dockerfile: Dockerfile.dev
-  image: trita-api:dev
+  image: laremdia-api:dev
   env_file: .env
   environment:
     DATABASE_HOST: db

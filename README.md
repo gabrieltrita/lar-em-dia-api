@@ -1,6 +1,6 @@
-# trita-api
+# laremdia-api
 
-Base API (Rails 8.1, API-only) for the Trita apps. The front end lives in the separate **trita-web** project (Node).
+API (Rails 8.1, API-only) for **Lar em Dia**, a family budgeting and cash-flow projection app, forked from [trita-api](https://github.com/gabrieltrita/trita-api). The front end lives in the separate **lar-em-dia-app** project (Flutter: web, Android and iOS).
 
 ## Stack
 
@@ -92,10 +92,9 @@ app/
     api/v1/auth/     register, confirm, login, two_factor, refresh, logout, passwords
     api/v1/me/       sessions, two_factor, consents, identities
     api/v1/admin/    users, audit_logs
-    api/v1/notes_controller.rb   example domain module (see feature 16)
   jobs/              MaintenanceCleanupJob
   mailers/           UserMailer
-  models/            User, RefreshToken, AuditLog, Consent, Identity, Current, Note (example)
+  models/            User, RefreshToken, AuditLog, Consent, Identity, Current
   policies/          Pundit
   services/auth/     JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge
 bin/rename           renames the app after forking (see App identity)
@@ -113,13 +112,13 @@ spec/                RSpec
 
 | Key | Example | Drives |
 |---|---|---|
-| `name` | `Trita` | Email subjects, default sender name, the 2FA account label in authenticator apps |
-| `slug` | `trita` | JWT issuer (`trita-api`), refresh cookie (`trita_refresh`), database names (`trita_api_development`), Redis cache namespace, data export file name, Swagger page title |
-| `domain` | `trita.dev` | Default sender `no-reply@<domain>` and the seed users' emails |
+| `name` | `Lar em Dia` | Email subjects, default sender name, the 2FA account label in authenticator apps |
+| `slug` | `laremdia` | JWT issuer (`laremdia-api`), refresh cookie (`laremdia_refresh`), database names (`laremdia_api_development`), Redis cache namespace, data export file name, Swagger page title |
+| `domain` | `laremdia.dev` | Default sender `no-reply@<domain>` and the seed users' emails |
 
 `slug` must start with a letter and contain only lowercase letters and digits, because it becomes part of database, cookie, container and image names. Code reads the values through `Rails.configuration.x.app`.
 
-To rename the app after forking, run `bin/rename SLUG [--name NAME] [--domain DOMAIN]` (for example `bin/rename acme`, or `bin/rename minhaloja --name "Minha Loja" --domain minhaloja.com.br`). It rewrites `config/app.yml`, the `TritaApi` module, the Compose project and image names and every mention in `README.md`, `docs/` and `.claude/CLAUDE.md`, validates everything before writing, and prints the manual steps that remain (new secrets, security contact, git remotes, databases). Name defaults to the capitalized slug and domain to `SLUG.dev`.
+To rename the app after forking, run `bin/rename SLUG [--name NAME] [--domain DOMAIN]` (for example `bin/rename acme`, or `bin/rename minhaloja --name "Minha Loja" --domain minhaloja.com.br`). It rewrites `config/app.yml`, the `LaremdiaApi` module, the Compose project and image names and every mention in `README.md`, `docs/` and `.claude/CLAUDE.md`, validates everything before writing, and prints the manual steps that remain (new secrets, security contact, git remotes, databases). Name defaults to the capitalized slug and domain to `SLUG.dev`.
 
 Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (repository and `upstream` remote, rename, secrets, first boot, where to put domain code, pulling fixes from the base).
 
@@ -132,7 +131,7 @@ The app refuses to boot in production unless these are set and strong enough: `D
 Logs go to stdout as one JSON object per line. Each request is a single line (lograge) with `time`, `level`, `method`, `path`, `controller`, `action`, `status`, `duration`, `db`, `view`, `request_id`, `user_id` and, on errors, the exception class:
 
 ```json
-{"time":"2026-10-23T16:50:34.216Z","level":"INFO","method":"POST","path":"/api/v1/notes","controller":"Api::V1::NotesController","action":"create","status":201,"duration":59.98,"db":8.37,"view":0.13,"request_id":"263d77c3-…","user_id":"2ef8b383-…"}
+{"time":"2026-10-23T16:50:34.216Z","level":"INFO","method":"POST","path":"/api/v1/me","controller":"Api::V1::MeController","action":"update","status":200,"duration":59.98,"db":8.37,"view":0.13,"request_id":"263d77c3-…","user_id":"2ef8b383-…"}
 ```
 
 Other lines carry `message` (or `error` with the exception class). Request parameters, bodies, IPs, user agents, exception messages and job arguments are never logged; `request_id` links a line to the audit log and to Sentry. `/up` is not logged. Sidekiq logs JSON too, with its own keys (`ts`, `lvl`, `msg`, `ctx` with the job class, id and duration). Set `RAILS_LOG_LEVEL` to change the level (default `info`).
@@ -244,7 +243,7 @@ POST /auth/login { "email": "ana@example.com", "password": "Secret@123" }
 POST /auth/refresh { "refresh_token": "..." }
 ```
 
-### 3. Cookie mode for browsers (recommended for trita-web)
+### 3. Cookie mode for browsers (recommended for the Flutter web build)
 
 Send `X-Token-Transport: cookie` on login, two_factor, confirm, refresh and `PATCH /me/password`, with `credentials: "include"`:
 
@@ -260,7 +259,7 @@ await fetch(`${API}/auth/refresh`, { method: "POST", credentials: "include", hea
 
 The refresh token goes into an `httpOnly`, `SameSite=Strict` cookie that JavaScript cannot read, and is removed from the JSON. Keep the access token in memory only. Without the header the cookie is ignored (CSRF protection).
 
-A Node BFF can instead use the default body mode and keep the refresh token in its own server-side cookie.
+The Android and iOS builds of lar-em-dia-app use the default body mode instead and keep the refresh token in the platform keystore (`flutter_secure_storage`).
 
 ### 4. Two-factor authentication (TOTP)
 
@@ -365,7 +364,7 @@ DELETE /me { "current_password": "...", "code": "123456 if 2FA is on" }
 
 ### 13. Emails
 
-Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. Emails: confirmation, sign-up attempt, welcome, password reset, password changed, email change confirmation and notice, account locked, 2FA disabled. Links point to `FRONTEND_URL`, so trita-web must implement `/login`, `/forgot-password`, `/reset-password`, `/confirm-email` and `/confirm-email-change`.
+Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. Emails: confirmation, sign-up attempt, welcome, password reset, password changed, email change confirmation and notice, account locked, 2FA disabled. Links point to `FRONTEND_URL`, so lar-em-dia-app must implement `/login`, `/forgot-password`, `/reset-password`, `/confirm-email` and `/confirm-email-change`.
 
 ### 14. Scheduled maintenance
 
@@ -377,39 +376,21 @@ Set `SENTRY_DSN` to enable Sentry for Rails and Sidekiq. Events carry the except
 
 Logs are structured JSON in production with no personal data (see "Production"). Find everything about one request by its `request_id`, which is also returned in the `X-Request-Id` response header, stored in audit log entries and attached to Sentry events.
 
-### 16. Notes (example domain module)
-
-A small resource that shows every convention a new feature follows; remove it when starting a real app (see "Removing the example module" in `docs/FORKING.md`).
-
-```http
-GET    /notes?page=1&limit=20
-POST   /notes          { "title": "Groceries", "body": "Milk" }
-GET    /notes/:id
-PATCH  /notes/:id      { "title": "Renamed" }
-DELETE /notes/:id
-```
-
-- Each note belongs to the current user, taken from the session; a `user_id` in the body is ignored.
-- Another user's note answers `404 not_found` (not 403), even for admins, so ids cannot be probed.
-- `title` (required, up to 200) and `body` (up to 10,000) are encrypted at rest and filtered from logs.
-- Listed in `User::PERSONAL_DATA`: included under `content.notes` in `GET /me/export` and deleted when the account is anonymized.
-- Routes live in `config/routes/app.rb`; the code is `Note`, `NotePolicy`, `NoteBlueprint` and `Api::V1::NotesController`, with request, model and policy specs.
-
-### 17. Resource generator
+### 16. Resource generator
 
 ```bash
 bin/rails g api_resource Product name:string price:decimal active:boolean
 ```
 
-Generates a resource owned by the current user in the shape of the notes example: migration (UUID key, `user_id`, `null: false` columns, list index), model, policy (owner only, 404 for anyone else), blueprint, paginated CRUD controller, the route in `config/routes/app.rb`, the OpenAPI tag, paths, schemas and response, a factory and request, model and policy specs. The generated code passes the suite at 100% line and branch coverage and RuboCop.
+Generates a resource owned by the current user in the shape of trita-api's notes example (removed from this app): migration (UUID key, `user_id`, `null: false` columns, list index), model, policy (owner only, 404 for anyone else), blueprint, paginated CRUD controller, the route in `config/routes/app.rb`, the OpenAPI tag, paths, schemas and response, a factory and request, model and policy specs. The generated code passes the suite at 100% line and branch coverage and RuboCop.
 
 Supported types: `string`, `text`, `integer`, `float`, `decimal`, `boolean`, `date`, `datetime`. At least one attribute must not be boolean; namespaced names are rejected. Afterwards the generator prints the manual steps: add `has_many` to `User`, and for personal data switch the columns to `text`, add `encrypts`, filter them from logs and list the association in `User::PERSONAL_DATA`.
 
-### 18. Health checks
+### 17. Health checks
 
 `GET /health` reports whether the database, the cache and Sidekiq are working (see "Production" for statuses, HTTP codes and where to use it, and `/up` for liveness).
 
-### 19. Social identities and passwordless accounts
+### 18. Social identities and passwordless accounts
 
 An account can be linked to Google or Apple identities and can have no password at all.
 

@@ -57,13 +57,13 @@ RSpec.describe "LGPD: consents and data export", type: :request do
     end
 
     it "includes every PERSONAL_DATA association, serialized by its blueprint" do
-      note = create(:note, user: user, title: "Diary")
-      create(:note)
+      identity = create(:identity, user: user)
+      create(:identity)
 
       get "/api/v1/me/export", headers: auth_headers(user)
 
       expect(json["content"].keys).to eq(User::PERSONAL_DATA.map(&:to_s))
-      expect(json.dig("content", "notes")).to eq([ NoteBlueprint.render_as_hash(note).as_json ])
+      expect(json.dig("content", "identities")).to eq([ IdentityBlueprint.render_as_hash(identity).as_json ])
     end
   end
 end

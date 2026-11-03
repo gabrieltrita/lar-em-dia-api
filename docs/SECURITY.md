@@ -1,6 +1,6 @@
 # Security
 
-How trita-api protects accounts and personal data, and the procedures to operate it safely.
+How laremdia-api protects accounts and personal data, and the procedures to operate it safely.
 
 ## Threat model at a glance
 
