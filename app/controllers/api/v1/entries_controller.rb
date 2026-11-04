@@ -7,7 +7,7 @@ module Api
 
       def index
         authorize Entry
-        pagy, entries = pagy(filtered_entries.chronological)
+        pagy, entries = pagy(filtered_entries.includes(:series).chronological)
         render json: { data: EntryBlueprint.render_as_hash(entries), meta: pagination_meta(pagy) }
       rescue Date::Error
         render_error(status: :bad_request, code: "invalid_date", message: "from and to must be dates (YYYY-MM-DD)")

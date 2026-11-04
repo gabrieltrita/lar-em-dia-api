@@ -10,7 +10,7 @@ module Api
         return render_error(status: :bad_request, code: "invalid_months", message: "months must be an integer from 1 to 24") unless months
 
         projection = Projection.new(user: current_user, from: from, months: months)
-        render json: { data: { anchor: anchor_json(projection.anchor), months: projection.months } }
+        render json: { data: { anchor: anchor_json(projection.anchor), months: projection.months, alerts: projection.alerts } }
       end
 
       private

@@ -64,6 +64,19 @@ RSpec.describe Projection do
     expect(rows.pluck(:savings_cents)).to eq([ 20_000, 10_000, 10_000 ])
   end
 
+  it "flags the months that close below zero" do
+    create(:entry, user: user, category: rent, amount_cents: 50_000, due_on: "2027-01-10")
+    projection = described_class.new(user: user, from: Date.new(2026, 11, 1), months: 4)
+
+    expect(projection.months.pluck(:negative)).to eq([ false, false, true, true ])
+    expect(projection.alerts).to eq(first_negative_month: "2027-01", negative_months_count: 2)
+  end
+
+  it "has no alert when every month stays positive" do
+    expect(described_class.new(user: user, from: Date.new(2026, 11, 1), months: 2).alerts)
+      .to eq(first_negative_month: nil, negative_months_count: 0)
+  end
+
   it "projects twelve months by default" do
     rows = described_class.new(user: user, from: Date.new(2026, 11, 1)).months
 

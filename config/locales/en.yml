@@ -23,6 +23,10 @@ en:
           attributes:
             as_of:
               in_future: "cannot be in the future"
+        entry_series:
+          attributes:
+            kind:
+              only_for_expenses: "installments can only be expenses"
         entry:
           attributes:
             paid_on:

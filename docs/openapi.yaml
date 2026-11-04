@@ -58,8 +58,8 @@ info:
     Validation `details` codes include Rails defaults (`blank`, `invalid`, `too_short`, `too_long`, `confirmation`, `inclusion`)
     plus `weak_password`, `required`, `same_as_current`, `taken`, `greater_than`, `not_an_integer`, `in_future` (balance date),
     `only_when_paid` (entry `paid_on` while pending), `inactive` (category no longer offered), `only_for_expenses`
-    (`nature` on an income entry) and `not_a_number`, `greater_than_or_equal_to` and `less_than_or_equal_to` (series
-    `entries_count`).
+    (`nature` on an income entry, `kind` on an installments series of income) and `not_a_number`,
+    `greater_than_or_equal_to`, `less_than_or_equal_to` and `present` (series `entries_count` and `total_cents`).
 servers:
   - url: /api/v1
 tags:
@@ -980,12 +980,15 @@ paths:
   /entry_series:
     post:
       tags: [Entries]
-      summary: Create a recurring series of monthly entries
+      summary: Create a recurring or installments series of monthly entries
       description: |
-        Creates `entries_count` entries (2 to 36, the first included) on the same day of consecutive months, forwards
-        or backwards from `due_on`; a month without that day uses its last day. Entries due up to today take the sent
-        status (paid ones with `paid_on` on their due date); later ones are pending. All or nothing: an invalid entry
-        answers the same `details` as `POST /entries`.
+        Creates `entries_count` entries (the first included) on the same day of consecutive months; a month without
+        that day uses its last day. Entries due up to today take the sent status (paid ones with `paid_on` on their due
+        date); later ones are pending. All or nothing: an invalid entry answers the same `details` as `POST /entries`.
+
+        - `recurring` (default): 2 to 36 entries of `amount_cents`, forwards or backwards from `due_on`.
+        - `installments`: expenses only, 2 to 48 entries, always forwards. `total_cents` is split into equal
+          installments and the leftover cents go to the first one; `amount_cents` and `direction` are ignored.
       requestBody:
         required: true
         content:
@@ -1023,6 +1026,22 @@ paths:
                 properties:
                   data: { $ref: "#/components/schemas/Projection" }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/metrics:
+    get:
+      tags: [Admin]
+      summary: Aggregated usage metrics
+      description: Counts only. Never amounts, descriptions or any other content of a user's entries. Anonymized accounts are left out.
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AdminMetrics" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 security:
   - bearerAuth: []
 components:
@@ -1205,6 +1224,8 @@ components:
         paid_on: { type: [string, "null"], format: date }
         series_id: { type: [string, "null"], format: uuid, description: Series the entry was created with }
         series_position: { type: [integer, "null"], minimum: 1, description: Position in the series by due date }
+        series_kind: { type: [string, "null"], enum: [recurring, installments, null] }
+        series_count: { type: [integer, "null"], minimum: 1, description: Entries in the series, for labels like 3/10 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     EntryInput:
@@ -1219,27 +1240,35 @@ components:
         status: { type: string, enum: [pending, paid], default: pending }
         paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
     EntrySeriesInput:
-      allOf:
-        - $ref: "#/components/schemas/EntryInput"
-        - type: object
-          required: [entries_count, direction]
-          properties:
-            entries_count: { type: integer, minimum: 2, maximum: 36, description: Number of entries, the first included }
-            direction: { type: string, enum: [forward, backward], description: Following or previous months }
+      type: object
+      required: [category_id, description, due_on, entries_count]
+      properties:
+        kind: { type: string, enum: [recurring, installments], default: recurring }
+        category_id: { type: string, format: uuid }
+        nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expenses only; defaults to the category's default_nature }
+        description: { type: string, maxLength: 200 }
+        amount_cents: { type: integer, minimum: 1, description: Recurring only; the amount of every entry }
+        total_cents: { type: integer, description: Installments only; at least one cent per installment }
+        due_on: { type: string, format: date, description: Due date of the first entry sent }
+        status: { type: string, enum: [pending, paid], default: pending }
+        paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
+        entries_count: { type: integer, minimum: 2, maximum: 48, description: Number of entries, the first included; up to 36 for recurring }
+        direction: { type: string, enum: [forward, backward], description: Recurring only; following or previous months }
     EntrySeries:
       type: object
       required: [id, kind, entries_count, entries]
       properties:
         id: { type: string, format: uuid }
-        kind: { type: string, enum: [recurring] }
+        kind: { type: string, enum: [recurring, installments] }
         entries_count: { type: integer }
+        total_cents: { type: [integer, "null"], description: Installments only }
         created_at: { type: string, format: date-time }
         entries:
           type: array
           items: { $ref: "#/components/schemas/Entry" }
     Projection:
       type: object
-      required: [anchor, months]
+      required: [anchor, months, alerts]
       properties:
         anchor:
           type: [object, "null"]
@@ -1250,9 +1279,15 @@ components:
         months:
           type: array
           items: { $ref: "#/components/schemas/ProjectionMonth" }
+        alerts:
+          type: object
+          required: [first_negative_month, negative_months_count]
+          properties:
+            first_negative_month: { type: [string, "null"], example: "2027-03", description: First projected month that closes below zero }
+            negative_months_count: { type: integer, minimum: 0 }
     ProjectionMonth:
       type: object
-      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents]
+      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative]
       properties:
         month: { type: string, example: "2026-11" }
         opening_cents: { type: integer }
@@ -1262,6 +1297,38 @@ components:
         variable_expense_cents: { type: integer }
         closing_cents: { type: integer, description: May be negative }
         savings_cents: { type: integer, description: Income minus expenses from the first projected month through this one; may be negative }
+        negative: { type: boolean, description: The month closes below zero }
+    AdminMetrics:
+      type: object
+      required: [users, engagement, signups_by_week]
+      properties:
+        users:
+          type: object
+          required: [total, confirmed, active_30d, new_30d, deactivated, with_two_factor]
+          properties:
+            total: { type: integer }
+            confirmed: { type: integer }
+            active_30d: { type: integer, description: Signed in during the last 30 days }
+            new_30d: { type: integer, description: Signed up during the last 30 days }
+            deactivated: { type: integer }
+            with_two_factor: { type: integer }
+        engagement:
+          type: object
+          required: [with_balance, with_entries, with_5_series, entries_created_30d]
+          properties:
+            with_balance: { type: integer, description: Users with at least one balance }
+            with_entries: { type: integer, description: Users with at least one entry }
+            with_5_series: { type: integer, description: Users with at least five series }
+            entries_created_30d: { type: integer }
+        signups_by_week:
+          type: array
+          description: The last 12 weeks, oldest first
+          items:
+            type: object
+            required: [week, count]
+            properties:
+              week: { type: string, format: date, description: Monday of the week }
+              count: { type: integer }
     Pagination:
       type: object
       properties:

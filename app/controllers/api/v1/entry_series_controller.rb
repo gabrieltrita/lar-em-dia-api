@@ -7,7 +7,9 @@ module Api
           user: current_user,
           attributes: entry_params,
           count: params[:entries_count],
-          direction: params[:direction]
+          direction: params[:direction],
+          kind: params[:kind],
+          total_cents: params[:total_cents]
         )
 
         if creator.call

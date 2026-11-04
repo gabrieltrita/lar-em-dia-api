@@ -1,14 +1,16 @@
 class EntrySeriesCreator
   attr_reader :series
 
-  def initialize(user:, attributes:, count:, direction:)
+  def initialize(user:, attributes:, count:, direction:, kind: nil, total_cents: nil)
     @user = user
     @attributes = attributes
-    @series = user.entry_series.new(entries_count: count, direction: direction)
+    @series = user.entry_series.new(kind: kind.presence || "recurring", entries_count: count, direction: direction, total_cents: total_cents)
+    @series.direction = "forward" if @series.installments?
   end
 
   def call
     base = @user.entries.new(@attributes)
+    base.amount_cents = nil if @series.installments?
     return false unless valid?(base)
 
     EntrySeries.transaction do
@@ -22,10 +24,21 @@ class EntrySeriesCreator
 
   def valid?(base)
     series_valid = @series.valid?
-    return true if base.valid? && series_valid
+    base.amount_cents = @series.installment_amounts.first if @series.installments? && series_valid
+    base_valid = base.valid?
+    @series.errors.add(:kind, :only_for_expenses) if @series.installments? && base.income?
+    return true if base_valid && @series.errors.empty?
 
-    @series.errors.merge!(base.errors)
+    merge_entry_errors(base)
     false
+  end
+
+  def merge_entry_errors(base)
+    base.errors.each do |error|
+      next if @series.installments? && error.attribute == :amount_cents
+
+      @series.errors.import(error)
+    end
   end
 
   def due_dates(due_on)
@@ -37,6 +50,7 @@ class EntrySeriesCreator
   def create_entry(base, due_on, position)
     entry = base.dup
     entry.assign_attributes(due_on: due_on, series: @series, series_position: position)
+    entry.amount_cents = @series.installment_amounts[position - 1] if @series.installments?
     copy_status(entry, base) unless due_on == base.due_on
     entry.save!
   end
