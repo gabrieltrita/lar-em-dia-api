@@ -23,9 +23,10 @@ RSpec.describe "Projection", type: :request do
     expect(months.size).to eq(12)
     expect(months.first).to eq(
       "month" => "2026-11", "opening_cents" => 100_000, "income_cents" => 0, "expense_cents" => 30_000,
-      "fixed_expense_cents" => 30_000, "variable_expense_cents" => 0, "closing_cents" => 70_000
+      "fixed_expense_cents" => 30_000, "variable_expense_cents" => 0, "closing_cents" => 70_000,
+      "savings_cents" => -30_000
     )
-    expect(months.last).to include("month" => "2027-10", "closing_cents" => 70_000)
+    expect(months.last).to include("month" => "2027-10", "closing_cents" => 70_000, "savings_cents" => -30_000)
   end
 
   it "accepts a starting month and a number of months, without an anchor" do

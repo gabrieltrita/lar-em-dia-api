@@ -1,0 +1,52 @@
+require "rails_helper"
+
+RSpec.describe "Entry series", type: :request do
+  let(:user) { create(:user) }
+  let(:headers) { auth_headers(user) }
+  let(:salary) { create(:category, key: "salary") }
+  let(:valid_params) do
+    { category_id: salary.id, description: "Salary", amount_cents: 650_000, due_on: "2026-11-05", entries_count: 3, direction: "forward" }
+  end
+
+  around { |example| travel_to(Time.zone.local(2026, 11, 20, 12)) { example.run } }
+
+  it "requires authentication" do
+    post "/api/v1/entry_series", params: valid_params, as: :json
+    expect(response).to have_http_status(:unauthorized)
+  end
+
+  describe "POST /api/v1/entry_series" do
+    it "creates the series and its entries for the current user" do
+      post "/api/v1/entry_series", params: valid_params.merge(status: "paid", paid_on: "2026-11-05"), headers: headers, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(json["data"]).to include("kind" => "recurring", "entries_count" => 3)
+      entries = json.dig("data", "entries")
+      expect(entries.map { |entry| entry.values_at("due_on", "status", "series_position") }).to eq(
+        [ [ "2026-11-05", "paid", 1 ], [ "2026-12-05", "pending", 2 ], [ "2027-01-05", "pending", 3 ] ]
+      )
+      expect(entries.pluck("series_id").uniq).to eq([ json.dig("data", "id") ])
+      expect(user.entries.count).to eq(3)
+    end
+
+    it "shows the series on each entry" do
+      post "/api/v1/entry_series", params: valid_params, headers: headers, as: :json
+      entry = Entry.find(json.dig("data", "entries", 1, "id"))
+
+      get "/api/v1/entries/#{entry.id}", headers: headers
+
+      expect(json["data"]).to include("series_id" => entry.series_id, "series_position" => 2)
+    end
+
+    it "returns per-field errors and creates nothing" do
+      post "/api/v1/entry_series", params: valid_params.merge(entries_count: 1, direction: "up", description: ""), headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      details = json.dig("error", "details")
+      expect(details.dig("entries_count", 0, "code")).to eq("greater_than_or_equal_to")
+      expect(details.dig("direction", 0, "code")).to eq("inclusion")
+      expect(details.dig("description", 0, "code")).to eq("blank")
+      expect(Entry.count).to eq(0)
+    end
+  end
+end

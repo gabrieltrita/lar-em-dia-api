@@ -57,8 +57,9 @@ info:
 
     Validation `details` codes include Rails defaults (`blank`, `invalid`, `too_short`, `too_long`, `confirmation`, `inclusion`)
     plus `weak_password`, `required`, `same_as_current`, `taken`, `greater_than`, `not_an_integer`, `in_future` (balance date),
-    `only_when_paid` (entry `paid_on` while pending), `inactive` (category no longer offered) and `only_for_expenses`
-    (`nature` on an income entry).
+    `only_when_paid` (entry `paid_on` while pending), `inactive` (category no longer offered), `only_for_expenses`
+    (`nature` on an income entry) and `not_a_number`, `greater_than_or_equal_to` and `less_than_or_equal_to` (series
+    `entries_count`).
 servers:
   - url: /api/v1
 tags:
@@ -953,6 +954,31 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/NotFound" }
+  /entry_series:
+    post:
+      tags: [Entries]
+      summary: Create a recurring series of monthly entries
+      description: |
+        Creates `entries_count` entries (2 to 36, the first included) on the same day of consecutive months, forwards
+        or backwards from `due_on`; a month without that day uses its last day. Entries due up to today take the sent
+        status (paid ones with `paid_on` on their due date); later ones are pending. All or nothing: an invalid entry
+        answers the same `details` as `POST /entries`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EntrySeriesInput" }
+      responses:
+        "201":
+          description: Series created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EntrySeries" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /projection:
     get:
       tags: [Projection]
@@ -1152,6 +1178,8 @@ components:
         due_on: { type: string, format: date }
         status: { type: string, enum: [pending, paid] }
         paid_on: { type: [string, "null"], format: date }
+        series_id: { type: [string, "null"], format: uuid, description: Series the entry was created with }
+        series_position: { type: [integer, "null"], minimum: 1, description: Position in the series by due date }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     EntryInput:
@@ -1165,6 +1193,25 @@ components:
         due_on: { type: string, format: date }
         status: { type: string, enum: [pending, paid], default: pending }
         paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
+    EntrySeriesInput:
+      allOf:
+        - $ref: "#/components/schemas/EntryInput"
+        - type: object
+          required: [entries_count, direction]
+          properties:
+            entries_count: { type: integer, minimum: 2, maximum: 36, description: Number of entries, the first included }
+            direction: { type: string, enum: [forward, backward], description: Following or previous months }
+    EntrySeries:
+      type: object
+      required: [id, kind, entries_count, entries]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [recurring] }
+        entries_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/Entry" }
     Projection:
       type: object
       required: [anchor, months]
@@ -1180,7 +1227,7 @@ components:
           items: { $ref: "#/components/schemas/ProjectionMonth" }
     ProjectionMonth:
       type: object
-      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents]
+      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents]
       properties:
         month: { type: string, example: "2026-11" }
         opening_cents: { type: integer }
@@ -1189,6 +1236,7 @@ components:
         fixed_expense_cents: { type: integer }
         variable_expense_cents: { type: integer }
         closing_cents: { type: integer, description: May be negative }
+        savings_cents: { type: integer, description: Income minus expenses from the first projected month through this one; may be negative }
     Pagination:
       type: object
       properties:

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_03_230010) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -78,10 +78,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_230010) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "nature"
+    t.uuid "series_id"
+    t.integer "series_position"
     t.index ["category_id"], name: "index_entries_on_category_id"
+    t.index ["series_id"], name: "index_entries_on_series_id"
     t.index ["user_id", "due_on"], name: "index_entries_on_user_id_and_due_on"
     t.index ["user_id", "kind", "due_on"], name: "index_entries_on_user_id_and_kind_and_due_on"
     t.index ["user_id"], name: "index_entries_on_user_id"
+  end
+
+  create_table "entry_series", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.string "kind", null: false
+    t.integer "entries_count", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_entry_series_on_user_id"
   end
 
   create_table "identities", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -145,7 +157,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_230010) do
   add_foreign_key "balances", "users"
   add_foreign_key "consents", "users", on_delete: :cascade
   add_foreign_key "entries", "categories"
+  add_foreign_key "entries", "entry_series", column: "series_id"
   add_foreign_key "entries", "users"
+  add_foreign_key "entry_series", "users"
   add_foreign_key "identities", "users"
   add_foreign_key "refresh_tokens", "users", on_delete: :cascade
 end

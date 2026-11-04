@@ -49,9 +49,10 @@ app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENAB
 app/controllers/health_controller.rb GET /health (readiness, public); checks in app/services/health_check.rb
 app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, two_factor_disabled
-app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry
-app/controllers/api/v1/categories_controller.rb, balances_controller.rb, entries_controller.rb, projections_controller.rb  Lar em Dia domain (README feature 19)
-app/services/projection.rb month by month projection (SQL sums grouped by month, kind and nature)
+app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry, EntrySeries
+app/controllers/api/v1/categories_controller.rb, balances_controller.rb, entries_controller.rb, entry_series_controller.rb, projections_controller.rb  Lar em Dia domain (README feature 19)
+app/services/projection.rb month by month projection (SQL sums grouped by month, kind and nature) and accumulated savings
+app/services/entry_series_creator.rb  recurring series: one entry per month, forwards or backwards
 app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
 app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, OauthSignin, oauth/JwksVerifier (+ GoogleVerifier, AppleVerifier), oauth/Providers, oauth/AppleRevoker, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed/ProviderUnavailable
 app/services/user_data_export.rb
