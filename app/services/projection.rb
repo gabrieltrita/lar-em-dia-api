@@ -14,9 +14,9 @@ class Projection
   end
 
   def months
-    opening = opening_balance
+    start = opening = opening_balance
     month_starts.map do |month|
-      row = month_row(month, opening)
+      row = month_row(month, opening, start)
       opening = row[:closing_cents]
       row
     end
@@ -24,11 +24,12 @@ class Projection
 
   private
 
-  def month_row(month, opening)
+  def month_row(month, opening, start)
     totals = monthly_totals.fetch(month, {})
     income = totals.fetch([ "income", nil ], 0)
     fixed = totals.fetch([ "expense", "fixed" ], 0)
     variable = totals.fetch([ "expense", "variable" ], 0)
+    closing = opening + income - fixed - variable
     {
       month: month.strftime("%Y-%m"),
       opening_cents: opening,
@@ -36,7 +37,8 @@ class Projection
       expense_cents: fixed + variable,
       fixed_expense_cents: fixed,
       variable_expense_cents: variable,
-      closing_cents: opening + income - fixed - variable
+      closing_cents: closing,
+      savings_cents: closing - start
     }
   end
 

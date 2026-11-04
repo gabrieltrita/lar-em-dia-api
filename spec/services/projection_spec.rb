@@ -58,6 +58,12 @@ RSpec.describe Projection do
     expect(closings(projection("2026-11-01", 2))).to eq([ [ "2026-11", 0, 20_000 ], [ "2026-12", 20_000, 10_000 ] ])
   end
 
+  it "accumulates savings from the first projected month" do
+    rows = projection("2026-11-01", 3)
+
+    expect(rows.pluck(:savings_cents)).to eq([ 20_000, 10_000, 10_000 ])
+  end
+
   it "projects twelve months by default" do
     rows = described_class.new(user: user, from: Date.new(2026, 11, 1)).months
 
