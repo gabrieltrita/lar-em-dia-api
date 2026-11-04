@@ -48,5 +48,46 @@ RSpec.describe "Entry series", type: :request do
       expect(details.dig("description", 0, "code")).to eq("blank")
       expect(Entry.count).to eq(0)
     end
+
+    context "with installments" do
+      let(:furniture) { create(:category, :expense, key: "furniture") }
+      let(:installments) do
+        { kind: "installments", category_id: furniture.id, description: "Sofa", total_cents: 120_000, due_on: "2026-11-10", entries_count: 10 }
+      end
+
+      it "splits the total into monthly installments" do
+        post "/api/v1/entry_series", params: installments, headers: headers, as: :json
+
+        expect(response).to have_http_status(:created)
+        expect(json["data"]).to include("kind" => "installments", "entries_count" => 10, "total_cents" => 120_000)
+        entries = json.dig("data", "entries")
+        expect(entries.pluck("amount_cents").uniq).to eq([ 12_000 ])
+        expect(entries.last).to include("due_on" => "2027-08-10", "series_kind" => "installments", "series_count" => 10)
+      end
+
+      it "lists each installment with its series" do
+        post "/api/v1/entry_series", params: installments, headers: headers, as: :json
+
+        get "/api/v1/entries", params: { from: "2026-12-01", to: "2026-12-31" }, headers: headers
+
+        expect(json["data"].sole).to include("series_position" => 2, "series_kind" => "installments", "series_count" => 10)
+      end
+
+      it "refuses income installments and a missing total" do
+        post "/api/v1/entry_series", params: installments.merge(category_id: salary.id, total_cents: nil), headers: headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        details = json.dig("error", "details")
+        expect(details.dig("kind", 0, "code")).to eq("only_for_expenses")
+        expect(details.dig("total_cents", 0, "code")).to eq("not_a_number")
+        expect(details).not_to have_key("amount_cents")
+      end
+
+      it "refuses a total on a recurring series" do
+        post "/api/v1/entry_series", params: valid_params.merge(total_cents: 100), headers: headers, as: :json
+
+        expect(json.dig("error", "details", "total_cents", 0, "code")).to eq("present")
+      end
+    end
   end
 end

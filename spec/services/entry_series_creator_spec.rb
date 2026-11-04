@@ -7,8 +7,8 @@ RSpec.describe EntrySeriesCreator do
 
   around { |example| travel_to(Date.new(2026, 11, 20)) { example.run } }
 
-  def create_series(count: 3, direction: "forward", **overrides)
-    creator = described_class.new(user: user, attributes: attributes.merge(overrides), count: count, direction: direction)
+  def create_series(count: 3, direction: "forward", kind: nil, total_cents: nil, **overrides)
+    creator = described_class.new(user: user, attributes: attributes.merge(overrides), count: count, direction: direction, kind: kind, total_cents: total_cents)
     [ creator.call, creator.series ]
   end
 
@@ -62,5 +62,48 @@ RSpec.describe EntrySeriesCreator do
 
     expect(created).to be(false)
     expect(series.errors.details.keys).to eq([ :description ])
+  end
+
+  context "with installments" do
+    let(:card) { create(:category, :expense) }
+    let(:attributes) { { category_id: card.id, description: "Sofa", amount_cents: 1, due_on: Date.new(2026, 11, 10) } }
+
+    it "splits the total forwards whatever the direction" do
+      created, series = create_series(kind: "installments", total_cents: 100_000, direction: "backward")
+
+      expect(created).to be(true)
+      expect(series.reload).to have_attributes(kind: "installments", total_cents: 100_000, entries_count: 3)
+      expect(series.entries.map { |entry| [ entry.due_on.iso8601, entry.amount_cents ] }).to eq(
+        [ [ "2026-11-10", 33_334 ], [ "2026-12-10", 33_333 ], [ "2027-01-10", 33_333 ] ]
+      )
+    end
+
+    it "accepts up to 48 installments" do
+      created, series = create_series(kind: "installments", total_cents: 4_800, count: 48)
+
+      expect(created).to be(true)
+      expect(series.entries.size).to eq(48)
+    end
+
+    it "reports the total instead of the amount when the total is missing" do
+      created, series = create_series(kind: "installments", total_cents: nil)
+
+      expect(created).to be(false)
+      expect(series.errors.details.keys).to eq([ :total_cents ])
+    end
+
+    it "refuses income installments" do
+      created, series = create_series(kind: "installments", total_cents: 9_000, category_id: create(:category).id)
+
+      expect(created).to be(false)
+      expect(series.errors.details[:kind]).to eq([ { error: :only_for_expenses } ])
+    end
+
+    it "keeps the entry errors other than the amount" do
+      created, series = create_series(kind: "installments", total_cents: nil, description: "")
+
+      expect(created).to be(false)
+      expect(series.errors.details.keys).to contain_exactly(:total_cents, :description)
+    end
   end
 end

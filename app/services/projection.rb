@@ -14,12 +14,19 @@ class Projection
   end
 
   def months
-    start = opening = opening_balance
-    month_starts.map do |month|
-      row = month_row(month, opening, start)
-      opening = row[:closing_cents]
-      row
+    @rows ||= begin
+      start = opening = opening_balance
+      month_starts.map do |month|
+        row = month_row(month, opening, start)
+        opening = row[:closing_cents]
+        row
+      end
     end
+  end
+
+  def alerts
+    negative = months.select { |row| row[:negative] }
+    { first_negative_month: negative.first&.fetch(:month), negative_months_count: negative.size }
   end
 
   private
@@ -38,7 +45,8 @@ class Projection
       fixed_expense_cents: fixed,
       variable_expense_cents: variable,
       closing_cents: closing,
-      savings_cents: closing - start
+      savings_cents: closing - start,
+      negative: closing.negative?
     }
   end
 

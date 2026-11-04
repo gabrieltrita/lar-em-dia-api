@@ -7,6 +7,31 @@ RSpec.describe EntrySeries do
   it { is_expected.to validate_numericality_of(:entries_count).only_integer.is_greater_than_or_equal_to(2).is_less_than_or_equal_to(36) }
   it { is_expected.to validate_inclusion_of(:direction).in_array(%w[forward backward]).on(:create) }
 
+  it { is_expected.to validate_absence_of(:total_cents) }
+
+  context "with installments" do
+    subject(:series) { build(:entry_series, kind: :installments, entries_count: 3, total_cents: 10_000) }
+
+    it { is_expected.to be_valid }
+    it { is_expected.to validate_numericality_of(:entries_count).only_integer.is_less_than_or_equal_to(48) }
+
+    it "needs at least one cent per installment" do
+      series.total_cents = 2
+      expect(series).not_to be_valid
+      expect(series.errors.details[:total_cents]).to eq([ { error: :greater_than_or_equal_to, value: 2, count: 3 } ])
+    end
+
+    it "requires the total" do
+      series.total_cents = nil
+      series.validate
+      expect(series.errors.details[:total_cents].pluck(:error)).to include(:not_a_number)
+    end
+
+    it "splits the total and gives the leftover cents to the first installment" do
+      expect(series.installment_amounts).to eq([ 3_334, 3_333, 3_333 ])
+    end
+  end
+
   it "is recurring by default" do
     expect(series).to be_recurring
   end
