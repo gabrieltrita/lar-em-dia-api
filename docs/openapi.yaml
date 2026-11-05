@@ -60,7 +60,8 @@ info:
     plus `weak_password`, `required`, `same_as_current`, `taken`, `greater_than`, `not_an_integer`, `in_future` (balance date),
     `only_when_paid` (entry `paid_on` while pending), `inactive` (category no longer offered), `only_for_expenses`
     (`nature` on an income entry, `kind` on an installments series of income) and `not_a_number`,
-    `greater_than_or_equal_to`, `less_than_or_equal_to` and `present` (series `entries_count` and `total_cents`).
+    `greater_than_or_equal_to`, `less_than_or_equal_to` and `present` (series `entries_count` and `total_cents`), and
+    `immutable` (a category's `key` or `kind` after it is created).
 servers:
   - url: /api/v1
 tags:
@@ -1128,6 +1129,70 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /admin/categories:
+    get:
+      tags: [Admin]
+      summary: List every category, inactive ones included
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [income, expense] } }
+      responses:
+        "200":
+          description: Categories ordered by kind, position and key
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminCategory" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Admin]
+      summary: Create a category
+      description: |
+        Clients label known keys in their own language and show `name` for a key they do not know, so write the `name`
+        of a new category in the language the families read. `key` and `kind` cannot change later (`immutable`).
+        There is no delete: `active: false` hides the category from new entries and keeps the existing ones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "201": { $ref: "#/components/responses/AdminCategory" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /admin/categories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Admin]
+      summary: Rename, reorder, change the default nature or deactivate a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminCategory" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Admin]
+      summary: Same as PATCH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminCategory" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
   /admin/metrics:
     get:
       tags: [Admin]
@@ -1299,6 +1364,24 @@ components:
         name: { type: string, example: Salary }
         position: { type: integer }
         default_nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expense categories only }
+    AdminCategory:
+      allOf:
+        - $ref: "#/components/schemas/Category"
+        - type: object
+          required: [active]
+          properties:
+            active: { type: boolean }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    CategoryInput:
+      type: object
+      properties:
+        kind: { type: string, enum: [income, expense], description: Only on create }
+        key: { type: string, pattern: "^[a-z][a-z0-9_]*$", maxLength: 50, description: Only on create; clients translate by it }
+        name: { type: string, maxLength: 100, description: Display text for clients that do not know the key }
+        position: { type: integer, minimum: 0 }
+        default_nature: { type: [string, "null"], enum: [fixed, variable, null], description: Required for expense categories; income has none }
+        active: { type: boolean }
     Balance:
       type: object
       properties:
@@ -1470,6 +1553,15 @@ components:
         provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
         id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
+    AdminCategory:
+      description: Category
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/AdminCategory" }
     NotificationSettings:
       description: Notification settings
       content:

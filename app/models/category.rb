@@ -50,6 +50,7 @@ class Category < ApplicationRecord
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :default_nature, presence: true, if: :expense?
   validates :default_nature, absence: { message: :only_for_expenses }, if: :income?
+  validate :key_and_kind_unchanged, on: :update
 
   scope :active, -> { where(active: true) }
   scope :ordered, -> { order(:kind, :position, :key) }
@@ -68,5 +69,11 @@ class Category < ApplicationRecord
     return if kind == :income
 
     FIXED_EXPENSES.include?(key) ? "fixed" : "variable"
+  end
+
+  private
+
+  def key_and_kind_unchanged
+    %i[key kind].each { |attribute| errors.add(attribute, :immutable) if attribute_changed?(attribute) }
   end
 end

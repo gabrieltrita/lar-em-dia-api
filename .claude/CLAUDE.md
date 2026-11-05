@@ -27,6 +27,7 @@ Families record their current or past balance, past and future income and expens
 - **Projection**: computed on the server per month (`Projection` service, `GET /projection`): projected balance, accumulated savings and the months that go negative. Every entry counts by due date, pending or paid; the anchor is the latest balance and months before it are worked backwards. A "what if" simulation runs the same calculation with temporary entries and never persists them.
 - **Due-date alerts**: a daily Sidekiq cron job emails users about pending expenses close to their due date; the app also schedules local notifications. Server push (FCM/APNs) is out of the MVP.
 - **Admin metrics** (`GET /admin/metrics`, `AdminMetrics`): aggregated counts only, never entry content.
+- **Admin categories** (`/admin/categories`, no delete): `key` and `kind` are immutable (`immutable`) because clients translate by `key` and show `name` for unknown keys.
 - **Money** is integer cents (`amount_cents`, bigint), never floats.
 - **Privacy**: every financial record is personal data (`User::PERSONAL_DATA`). Free text (`Entry#description`) is encrypted; amounts and dates stay in clear so projections can filter and sum in SQL (owner decision, 2026-11-03). Admins never read users' entries or balances; admin features use account data and aggregated metrics only.
 - **Out of the MVP**: shared family budgets (multiple members), investment projections, bank integration, statement import.
