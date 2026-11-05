@@ -80,6 +80,10 @@ class Rack::Attack
     req.ip if req.post? && req.path == "/api/v1/entry_series"
   end
 
+  throttle("projection/simulation/ip", limit: 30, period: 1.minute) do |req|
+    req.ip if req.post? && req.path == "/api/v1/projection/simulation"
+  end
+
   self.throttled_responder = lambda do |_req|
     body = { error: { code: "rate_limited", message: "Too many requests. Please try again shortly." } }
     [ 429, { "Content-Type" => "application/json", "Retry-After" => "60" }, [ body.to_json ] ]

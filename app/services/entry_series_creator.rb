@@ -9,15 +9,22 @@ class EntrySeriesCreator
   end
 
   def call
+    entries = build
+    return false unless entries
+
+    EntrySeries.transaction do
+      @series.save!
+      entries.each(&:save!)
+    end
+    true
+  end
+
+  def build
     base = @user.entries.new(@attributes)
     base.amount_cents = nil if @series.installments?
     return false unless valid?(base)
 
-    EntrySeries.transaction do
-      @series.save!
-      due_dates(base.due_on).each.with_index(1) { |due_on, position| create_entry(base, due_on, position) }
-    end
-    true
+    due_dates(base.due_on).map.with_index(1) { |due_on, position| build_entry(base, due_on, position) }
   end
 
   private
@@ -47,12 +54,12 @@ class EntrySeriesCreator
     dates.sort
   end
 
-  def create_entry(base, due_on, position)
+  def build_entry(base, due_on, position)
     entry = base.dup
     entry.assign_attributes(due_on: due_on, series: @series, series_position: position)
     entry.amount_cents = @series.installment_amounts[position - 1] if @series.installments?
     copy_status(entry, base) unless due_on == base.due_on
-    entry.save!
+    entry
   end
 
   def copy_status(entry, base)
