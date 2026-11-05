@@ -72,6 +72,7 @@ lib/generators/api_resource/  `bin/rails g api_resource Name field:type`: user-o
 config/app.yml             app identity (name, slug, domain), read through Rails.configuration.x.app
 config/routes/app.rb       the app's routes, drawn inside /api/v1 by `draw :app`; the base never edits it
 lib/tasks/encryption.rake  bin/rails encryption:reencrypt
+lib/tasks/categories.rake  bin/rails categories:seed (default categories), hooked after db:prepare
 docs/openapi.yaml, docs/SECURITY.md, docs/FORKING.md (how to start an app from this base)
 spec/                      models, requests, mailers, policies, services, controllers (production-only error handling), jobs, lib, tasks; helpers in spec/support (auth_helpers, sentry_helpers)
 ```
