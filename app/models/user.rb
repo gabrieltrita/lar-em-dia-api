@@ -1,5 +1,6 @@
 class User < ApplicationRecord
   include TwoFactorAuthenticatable
+  include DueAlertable
 
   PASSWORD_FORMAT = /\A(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+\z/
   EMAIL_FORMAT = URI::MailTo::EMAIL_REGEXP

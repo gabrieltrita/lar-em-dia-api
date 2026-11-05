@@ -5,7 +5,7 @@ class AuditLog < ApplicationRecord
     user.registered user.confirmed user.created user.updated user.anonymized
     user.role_changed user.password_changed user.password_reset_requested user.password_reset
     user.email_change_requested user.email_changed user.unlocked user.deactivated user.reactivated
-    user.data_exported user.consent_changed
+    user.data_exported user.consent_changed user.notification_settings_changed
     two_factor.enabled two_factor.disabled two_factor.reset two_factor.backup_codes_regenerated
     session.revoked identity.linked identity.unlinked
   ].freeze

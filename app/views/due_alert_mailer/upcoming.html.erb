@@ -1,0 +1,9 @@
+<h1><%= message.subject %></h1>
+<p>Hi <%= @user.first_name %>, these bills are due on <%= l(@due_on, format: :long) %>:</p>
+<ul>
+  <% @entries.each do |entry| %>
+    <li><%= entry.description %>: <%= brl(entry.amount_cents) %></li>
+  <% end %>
+</ul>
+<p><a href="<%= @expenses_url %>">See your expenses</a></p>
+<p style="color:#666;font-size:13px">You get these alerts because they are on in your account. To stop them: <%= @unsubscribe_url %></p>

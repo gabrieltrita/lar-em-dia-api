@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_001000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_06_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -150,6 +150,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_001000) do
     t.datetime "anonymized_at"
     t.datetime "deactivated_at"
     t.string "time_zone", default: "America/Sao_Paulo", null: false
+    t.boolean "due_alerts_enabled", default: true, null: false
+    t.integer "due_alert_days_before", default: 1, null: false
+    t.date "due_alerts_sent_on"
     t.index ["anonymized_at"], name: "index_users_on_anonymized_at"
     t.index ["confirmed_at"], name: "index_users_on_confirmed_at"
     t.index ["email"], name: "index_users_on_email", unique: true

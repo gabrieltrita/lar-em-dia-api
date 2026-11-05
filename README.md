@@ -93,7 +93,7 @@ app/
     api/v1/me/       sessions, two_factor, consents, identities
     api/v1/admin/    users, audit_logs
     api/v1/          categories, balances, entries (Lar em Dia)
-  jobs/              MaintenanceCleanupJob
+  jobs/              MaintenanceCleanupJob, DueAlertsJob
   mailers/           UserMailer
   models/            User, RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry
   policies/          Pundit
@@ -477,3 +477,15 @@ POST   /projection/simulation { "from": "2026-11", "months": 12, "entries": [ { 
 - **Projection** answers `{ "data": { "anchor": { "amount_cents", "as_of" } | null, "months": [ { "month", "opening_cents", "income_cents", "expense_cents", "fixed_expense_cents", "variable_expense_cents", "closing_cents", "savings_cents", "negative" } ], "alerts": { "first_negative_month", "negative_months_count" } } }`. `negative` marks a month that closes below zero and `alerts` sums them up (`first_negative_month` is `null` when no month goes negative). `savings_cents` is the accumulated savings: income minus expenses from the first projected month through that month (it may be negative). The anchor is the most recent balance (zero and `null` without one). A month closes at the anchor plus income minus expenses due between the anchor date and the month's last day, worked backwards for months before the anchor; pending and paid entries both count by due date. `from` (`YYYY-MM`, default the current month) and `months` (1 to 24, default 12) answer `400 invalid_month` and `400 invalid_months` when malformed. The sums run in SQL (`Projection` in `app/services/projection.rb`).
 - **What-if simulation**: `POST /projection/simulation` takes `from` and `months` (as `GET /projection`) and `entries`, 1 to 10 hypothetical items (`blank` or `too_long` on `entries` otherwise). An item with `entries_count` is a series with the fields of `POST /entry_series` (recurring or installments); without it, a single entry with the fields of `POST /entries`. Items are validated like the real endpoints, with errors keyed by position (`entries.0.amount_cents`), built in memory (`ProjectionSimulation`) and never saved. The answer is `{ "data": { "baseline": <projection>, "simulated": <projection> } }`, both in the `GET /projection` format with their own `alerts`. To keep a simulation, the client sends the same items to `POST /entries` or `POST /entry_series`. Throttled at 30 per minute per IP (`projection/simulation/ip`).
 - Each record belongs to the current user (another user's id answers 404, also for admins). Balances, entries and entry series are listed in `User::PERSONAL_DATA`: exported under `content.balances`, `content.entries` and `content.entry_series` and deleted on anonymization.
+
+### 20. Due-date email alerts (Lar em Dia)
+
+```http
+GET   /me/notification_settings                -> { "due_alerts_enabled": true, "due_alert_days_before": 1 }
+PATCH /me/notification_settings { "due_alerts_enabled": true, "due_alert_days_before": 3 }
+POST  /me/notification_settings/unsubscribe { "token": "..." }   (no login)
+```
+
+- `DueAlertsJob` runs every hour (`config/schedule.yml`). It picks the time zones where it is 8h now (`users.time_zone`), and for each confirmed, active user there with alerts on it looks for pending expenses due `due_alert_days_before` days ahead (0 to 7, `inclusion` otherwise; 0 is the same day). When there are some, it sets `users.due_alerts_sent_on` to the user's local date (so a user gets at most one alert a day) and enqueues `DueAlertMailer.upcoming(user)`. The job receives no arguments in production and the mailer only the user: it reads the entries itself.
+- The email lists each bill's description and amount, links to `FRONTEND_URL/expenses` and carries an unsubscribe link, `FRONTEND_URL/unsubscribe?token=...`, valid for 60 days. The front end posts that token to `/me/notification_settings/unsubscribe`, which turns the alerts off without a login (`invalid_unsubscribe_token`, 401, for a bad or expired link). The link goes through the front end so that mail scanners following links do not unsubscribe anyone.
+- Every change is audited as `user.notification_settings_changed` with the changed fields and `via` (`settings` or `unsubscribe_link`). The unsubscribe endpoint is throttled at 10 per minute per IP (`notification_settings/unsubscribe/ip`).

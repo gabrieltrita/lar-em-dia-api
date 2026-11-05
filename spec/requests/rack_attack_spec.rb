@@ -60,6 +60,11 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
     expect(response).to have_http_status(:too_many_requests)
   end
 
+  it "throttles unsubscribe links by IP" do
+    11.times { post "/api/v1/me/notification_settings/unsubscribe", params: { token: "x" }, as: :json, env: { "REMOTE_ADDR" => "10.8.8.8" } }
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
   it "throttles second factor attempts" do
     5.times { post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" } }
     post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" }

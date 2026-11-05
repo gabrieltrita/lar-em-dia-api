@@ -9,3 +9,9 @@ end
 namespace :admin do
   resource :metrics, only: :show
 end
+
+namespace :me do
+  resource :notification_settings, only: %i[show update] do
+    post :unsubscribe
+  end
+end
