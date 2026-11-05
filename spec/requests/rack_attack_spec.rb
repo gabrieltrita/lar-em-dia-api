@@ -54,6 +54,12 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
     expect(response).to have_http_status(:too_many_requests)
   end
 
+  it "throttles projection simulations by IP" do
+    user = create(:user)
+    31.times { post "/api/v1/projection/simulation", params: {}, headers: auth_headers(user), as: :json, env: { "REMOTE_ADDR" => "10.7.7.7" } }
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
   it "throttles second factor attempts" do
     5.times { post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" } }
     post "/api/v1/auth/two_factor", params: { challenge_token: "x", code: "123456" }, as: :json, env: { "REMOTE_ADDR" => "10.2.2.2" }

@@ -49,6 +49,15 @@ RSpec.describe EntrySeriesCreator do
     expect(series.entries.map(&:status).uniq).to eq([ "pending" ])
   end
 
+  it "builds the entries in memory without saving them" do
+    creator = described_class.new(user: user, attributes: attributes, count: 2, direction: "forward")
+    entries = creator.build
+
+    expect(entries.map(&:due_on)).to eq([ attributes[:due_on].to_date, attributes[:due_on].to_date >> 1 ])
+    expect(entries).to all(be_new_record)
+    expect(Entry.count).to eq(0)
+  end
+
   it "creates nothing and gathers the series and entry errors when invalid" do
     created, series = create_series(count: 37, direction: "sideways", amount_cents: 0)
 

@@ -1027,6 +1027,60 @@ paths:
                 properties:
                   data: { $ref: "#/components/schemas/Projection" }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /projection/simulation:
+    post:
+      tags: [Projection]
+      summary: Simulate hypothetical entries without saving them
+      description: |
+        Answers the current projection (`baseline`) and the projection with up to 10 hypothetical entries added
+        (`simulated`), both in the `GET /projection` format. Nothing is saved. Each item is validated like
+        `POST /entries`, or like `POST /entry_series` when it has `entries_count`; errors are keyed by position, such as
+        `entries.0.amount_cents`. To keep a simulation, send the same items to `POST /entries` or `POST /entry_series`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                from: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11", description: First month; defaults to the current month }
+                months: { type: integer, minimum: 1, maximum: 24, default: 12 }
+                entries:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [category_id, description, due_on]
+                    properties:
+                      category_id: { type: string, format: uuid }
+                      nature: { type: [string, "null"], enum: [fixed, variable, null] }
+                      description: { type: string, maxLength: 200 }
+                      amount_cents: { type: integer, minimum: 1, description: Not used for installments }
+                      due_on: { type: string, format: date }
+                      entries_count: { type: integer, minimum: 2, maximum: 48, description: Simulates a series, as in `POST /entry_series` }
+                      kind: { type: string, enum: [recurring, installments], default: recurring }
+                      direction: { type: string, enum: [forward, backward] }
+                      total_cents: { type: integer, description: Installments only }
+      responses:
+        "200":
+          description: Baseline and simulated projections
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [baseline, simulated]
+                    properties:
+                      baseline: { $ref: "#/components/schemas/Projection" }
+                      simulated: { $ref: "#/components/schemas/Projection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /admin/metrics:
     get:
       tags: [Admin]

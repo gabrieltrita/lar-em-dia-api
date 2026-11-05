@@ -6,8 +6,9 @@ class Projection
 
   attr_reader :anchor
 
-  def initialize(user:, from:, months: DEFAULT_MONTHS)
+  def initialize(user:, from:, months: DEFAULT_MONTHS, extra_entries: [])
     @entries = user.entries
+    @extra_entries = extra_entries
     @from = from.beginning_of_month
     @months = months
     @anchor = user.balances.recent.first
@@ -60,7 +61,12 @@ class Projection
   end
 
   def net_between(after, through)
-    @entries.where(due_on: after.next_day..through).sum(SIGNED_AMOUNT)
+    range = after.next_day..through
+    @entries.where(due_on: range).sum(SIGNED_AMOUNT) + @extra_entries.select { |entry| range.cover?(entry.due_on) }.sum { |entry| signed(entry) }
+  end
+
+  def signed(entry)
+    entry.income? ? entry.amount_cents : -entry.amount_cents
   end
 
   def month_starts
@@ -72,8 +78,18 @@ class Projection
       .where(due_on: @from..month_starts.last.end_of_month)
       .group(MONTH_OF_DUE_ON, :kind, :nature)
       .sum(:amount_cents)
-      .each_with_object(Hash.new { |hash, key| hash[key] = {} }) do |((month, kind, nature), cents), totals|
+      .each_with_object(Hash.new { |hash, key| hash[key] = Hash.new(0) }) do |((month, kind, nature), cents), totals|
         totals[month][[ kind, nature ]] = cents
       end
+      .tap { |totals| add_extra_entries(totals) }
+  end
+
+  def add_extra_entries(totals)
+    period = @from..month_starts.last.end_of_month
+    @extra_entries.each do |entry|
+      next unless period.cover?(entry.due_on)
+
+      totals[entry.due_on.beginning_of_month][[ entry.kind, entry.nature ]] += entry.amount_cents
+    end
   end
 end
