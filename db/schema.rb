@@ -149,6 +149,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_001000) do
     t.string "otp_backup_code_digests", default: [], null: false, array: true
     t.datetime "anonymized_at"
     t.datetime "deactivated_at"
+    t.string "time_zone", default: "America/Sao_Paulo", null: false
     t.index ["anonymized_at"], name: "index_users_on_anonymized_at"
     t.index ["confirmed_at"], name: "index_users_on_confirmed_at"
     t.index ["email"], name: "index_users_on_email", unique: true
