@@ -34,6 +34,7 @@ info:
     | `two_factor_challenge_expired` | 401 | Login 2FA challenge already used or expired |
     | `invalid_confirmation_token` | 401 | Bad or expired email confirmation link |
     | `invalid_email_change_token` | 401 | Bad or expired email change link |
+    | `invalid_unsubscribe_token` | 401 | Bad or expired due-date alerts unsubscribe link |
     | `invalid_reset_token` | 401 | Bad or expired password reset link |
     | `oauth_token_invalid` | 401 | Provider ID token is invalid, expired or for another client |
     | `oauth_email_unverified` | 401 | Provider says the email is not verified |
@@ -491,6 +492,52 @@ paths:
       responses:
         "204": { description: Session ended }
         "404": { $ref: "#/components/responses/NotFound" }
+  /me/notification_settings:
+    get:
+      tags: [Me]
+      summary: Due-date email alert preferences
+      responses:
+        "200": { $ref: "#/components/responses/NotificationSettings" }
+    patch:
+      tags: [Me]
+      summary: Turn due-date email alerts on or off and choose how many days before
+      description: |
+        When on, an email lists the pending expenses due `due_alert_days_before` days ahead (0 is the same day). It is
+        sent once a day, at 8h in the user's `time_zone`, only when there is something due.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationSettingsInput" }
+      responses:
+        "200": { $ref: "#/components/responses/NotificationSettings" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Me]
+      summary: Same as PATCH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationSettingsInput" }
+      responses:
+        "200": { $ref: "#/components/responses/NotificationSettings" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /me/notification_settings/unsubscribe:
+    post:
+      tags: [Me]
+      summary: Turn due-date email alerts off from the link in the email
+      description: The alert email links to `FRONTEND_URL/unsubscribe?token=...`; the front end sends the token here. No login needed. The link lasts 60 days.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/NotificationSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /me/consents:
     get:
       tags: [Me]
@@ -1322,6 +1369,17 @@ components:
         entries:
           type: array
           items: { $ref: "#/components/schemas/Entry" }
+    NotificationSettings:
+      type: object
+      required: [due_alerts_enabled, due_alert_days_before]
+      properties:
+        due_alerts_enabled: { type: boolean, default: true }
+        due_alert_days_before: { type: integer, minimum: 0, maximum: 7, default: 1 }
+    NotificationSettingsInput:
+      type: object
+      properties:
+        due_alerts_enabled: { type: boolean }
+        due_alert_days_before: { type: integer, minimum: 0, maximum: 7, description: "Outside 0 to 7 answers `inclusion`" }
     Projection:
       type: object
       required: [anchor, months, alerts]
@@ -1412,6 +1470,15 @@ components:
         provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
         id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
+    NotificationSettings:
+      description: Notification settings
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/NotificationSettings" }
     Entry:
       description: Entry
       content:

@@ -48,7 +48,8 @@ app/controllers/api/v1/me/     sessions, two_factor, consents, identities
 app/controllers/api/v1/admin/  base (admin + 2FA required), users, audit_logs
 app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENABLE_API_DOCS=true)
 app/controllers/health_controller.rb GET /health (readiness, public); checks in app/services/health_check.rb
-app/jobs/                  MaintenanceCleanupJob (daily, config/schedule.yml)
+app/jobs/                  MaintenanceCleanupJob (daily), DueAlertsJob (hourly, emails due-date alerts at 8h local time; README feature 20), both in config/schedule.yml
+app/mailers/due_alert_mailer.rb upcoming (bills due in the user's chosen days, with an unsubscribe link)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, account_deactivated, account_reactivated, two_factor_disabled
 app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry, EntrySeries
 app/controllers/api/v1/categories_controller.rb, balances_controller.rb, entries_controller.rb, entry_series_controller.rb, projections_controller.rb  Lar em Dia domain (README feature 19)
