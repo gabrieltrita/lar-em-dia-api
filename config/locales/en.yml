@@ -19,6 +19,10 @@ en:
           attributes:
             default_nature:
               only_for_expenses: "can only be set on expense categories"
+            key:
+              immutable: "cannot be changed after the category is created"
+            kind:
+              immutable: "cannot be changed after the category is created"
         balance:
           attributes:
             as_of:

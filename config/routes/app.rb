@@ -8,6 +8,7 @@ end
 
 namespace :admin do
   resource :metrics, only: :show
+  resources :categories, only: %i[index create update]
 end
 
 namespace :me do
