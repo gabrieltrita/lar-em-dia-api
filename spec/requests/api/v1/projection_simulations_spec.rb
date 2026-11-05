@@ -66,6 +66,21 @@ RSpec.describe "Projection simulation", type: :request do
     expect(json.dig("data", "simulated", "months", 0, "opening_cents")).to eq(115_000)
   end
 
+  it "returns whole cents when real entries fall between the start of the month and the balance" do
+    travel_to Time.zone.local(2026, 11, 10, 12) do
+      create(:balance, user: user, amount_cents: 100_000, as_of: "2026-11-08")
+      create(:entry, user: user, category: income, amount_cents: 40_000, due_on: "2026-11-03")
+    end
+
+    simulate([ { category_id: expense.id, description: "Chair", amount_cents: 1_000, due_on: "2026-11-20" } ], months: 1)
+
+    expect(response).to have_http_status(:ok)
+    %w[baseline simulated].each do |key|
+      expect(json.dig("data", key, "months", 0).values_at("opening_cents", "closing_cents", "savings_cents")).to all(be_an(Integer))
+    end
+    expect(json.dig("data", "simulated", "months", 0, "opening_cents")).to eq(60_000)
+  end
+
   it "ignores hypothetical entries after the period" do
     simulate([ { category_id: expense.id, description: "Later", amount_cents: 1_000, due_on: "2027-06-01" } ], months: 2)
 

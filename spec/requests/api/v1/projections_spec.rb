@@ -30,6 +30,21 @@ RSpec.describe "Projection", type: :request do
     expect(months.last).to include("month" => "2027-10", "closing_cents" => 70_000, "savings_cents" => -30_000)
   end
 
+  it "returns whole cents when entries fall between the start of the month and a mid-month balance" do
+    travel_to Time.zone.local(2026, 11, 15, 12) do
+      create(:balance, user: user, amount_cents: 100_000, as_of: "2026-11-10")
+      create(:entry, user: user, category: create(:category, :income), amount_cents: 500_000, due_on: "2026-11-05")
+      create(:entry, user: user, category: create(:category, :expense, default_nature: :fixed), amount_cents: 30_000, due_on: "2026-11-20")
+
+      get "/api/v1/projection", params: { months: 2 }, headers: headers
+    end
+
+    expect(response).to have_http_status(:ok)
+    first = json.dig("data", "months", 0)
+    expect(first).to include("opening_cents" => -400_000, "closing_cents" => 70_000, "savings_cents" => 470_000)
+    expect(first.values_at("opening_cents", "closing_cents", "savings_cents")).to all(be_an(Integer))
+  end
+
   it "accepts a starting month and a number of months, without an anchor" do
     get "/api/v1/projection", params: { from: "2027-01", months: "24" }, headers: headers
 
