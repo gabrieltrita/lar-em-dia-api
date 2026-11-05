@@ -1,1 +1,18 @@
-resources :notes, only: %i[index show create update destroy]
+resources :categories, only: :index
+resources :balances, only: %i[index show create update destroy]
+resources :entries, only: %i[index show create update destroy]
+resources :entry_series, only: :create
+resource :projection, only: :show do
+  post :simulation
+end
+
+namespace :admin do
+  resource :metrics, only: :show
+  resources :categories, only: %i[index create update]
+end
+
+namespace :me do
+  resource :notification_settings, only: %i[show update] do
+    post :unsubscribe
+  end
+end

@@ -10,8 +10,8 @@ RSpec.describe JsonLogFormatter do
   end
 
   it "merges structured events, such as lograge request lines" do
-    expect(format({ method: "GET", path: "/api/v1/notes", status: 200 })).to eq(
-      "time" => "2026-10-23T16:40:12.345Z", "level" => "INFO", "method" => "GET", "path" => "/api/v1/notes", "status" => 200
+    expect(format({ method: "GET", path: "/api/v1/me", status: 200 })).to eq(
+      "time" => "2026-10-23T16:40:12.345Z", "level" => "INFO", "method" => "GET", "path" => "/api/v1/me", "status" => 200
     )
   end
 

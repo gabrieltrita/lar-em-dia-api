@@ -1,4 +1,4 @@
-class NotePolicy < ApplicationPolicy
+class BalancePolicy < ApplicationPolicy
   def index? = true
   def create? = true
   def show? = owner?

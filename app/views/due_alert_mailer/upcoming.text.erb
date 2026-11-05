@@ -1,0 +1,11 @@
+<%= message.subject %>
+
+Hi <%= @user.first_name %>, these bills are due on <%= l(@due_on, format: :long) %>:
+
+<% @entries.each do |entry| -%>
+- <%= entry.description %>: <%= brl(entry.amount_cents) %>
+<% end -%>
+
+See your expenses: <%= @expenses_url %>
+
+You get these alerts because they are on in your account. To stop them: <%= @unsubscribe_url %>

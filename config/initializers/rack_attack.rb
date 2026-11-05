@@ -76,6 +76,18 @@ class Rack::Attack
     req.ip if (req.post? || req.patch? || req.delete?) && (REAUTH_PATHS.include?(req.path) || req.path.start_with?("/api/v1/me/two_factor", "/api/v1/me/identities") || (req.delete? && req.path == "/api/v1/me"))
   end
 
+  throttle("notification_settings/unsubscribe/ip", limit: 10, period: 1.minute) do |req|
+    req.ip if req.post? && req.path == "/api/v1/me/notification_settings/unsubscribe"
+  end
+
+  throttle("entry_series/ip", limit: 20, period: 1.minute) do |req|
+    req.ip if req.post? && req.path == "/api/v1/entry_series"
+  end
+
+  throttle("projection/simulation/ip", limit: 30, period: 1.minute) do |req|
+    req.ip if req.post? && req.path == "/api/v1/projection/simulation"
+  end
+
   self.throttled_responder = lambda do |_req|
     body = { error: { code: "rate_limited", message: "Too many requests. Please try again shortly." } }
     [ 429, { "Content-Type" => "application/json", "Retry-After" => "60" }, [ body.to_json ] ]

@@ -15,3 +15,27 @@ en:
           attributes:
             password:
               weak_password: "must include uppercase, lowercase letters and numbers"
+        category:
+          attributes:
+            default_nature:
+              only_for_expenses: "can only be set on expense categories"
+            key:
+              immutable: "cannot be changed after the category is created"
+            kind:
+              immutable: "cannot be changed after the category is created"
+        balance:
+          attributes:
+            as_of:
+              in_future: "cannot be in the future"
+        entry_series:
+          attributes:
+            kind:
+              only_for_expenses: "installments can only be expenses"
+        entry:
+          attributes:
+            paid_on:
+              only_when_paid: "can only be set when the entry is paid"
+            category:
+              inactive: "is no longer available"
+            nature:
+              only_for_expenses: "can only be set on expenses"

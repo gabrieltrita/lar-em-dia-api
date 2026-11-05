@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_06_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -31,6 +31,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_000002) do
     t.index ["target_type", "target_id"], name: "index_audit_logs_on_target_type_and_target_id"
   end
 
+  create_table "balances", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.bigint "amount_cents", null: false
+    t.date "as_of", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id", "as_of"], name: "index_balances_on_user_id_and_as_of", unique: true
+    t.index ["user_id"], name: "index_balances_on_user_id"
+  end
+
+  create_table "categories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "kind", null: false
+    t.string "key", null: false
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "default_nature"
+    t.index ["key"], name: "index_categories_on_key", unique: true
+    t.index ["kind", "position"], name: "index_categories_on_kind_and_position"
+  end
+
   create_table "consents", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
     t.string "kind", null: false
@@ -43,6 +66,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_000002) do
     t.index ["user_id"], name: "index_consents_on_user_id"
   end
 
+  create_table "entries", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "category_id", null: false
+    t.string "kind", null: false
+    t.text "description", null: false
+    t.bigint "amount_cents", null: false
+    t.date "due_on", null: false
+    t.string "status", default: "pending", null: false
+    t.date "paid_on"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "nature"
+    t.uuid "series_id"
+    t.integer "series_position"
+    t.index ["category_id"], name: "index_entries_on_category_id"
+    t.index ["series_id"], name: "index_entries_on_series_id"
+    t.index ["user_id", "due_on"], name: "index_entries_on_user_id_and_due_on"
+    t.index ["user_id", "kind", "due_on"], name: "index_entries_on_user_id_and_kind_and_due_on"
+    t.index ["user_id"], name: "index_entries_on_user_id"
+  end
+
+  create_table "entry_series", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.string "kind", null: false
+    t.integer "entries_count", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "total_cents"
+    t.index ["user_id"], name: "index_entry_series_on_user_id"
+  end
+
   create_table "identities", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
     t.string "provider", null: false
@@ -52,16 +106,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_000002) do
     t.datetime "updated_at", null: false
     t.index ["provider", "provider_uid"], name: "index_identities_on_provider_and_provider_uid", unique: true
     t.index ["user_id", "provider"], name: "index_identities_on_user_id_and_provider", unique: true
-  end
-
-  create_table "notes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.uuid "user_id", null: false
-    t.text "title", null: false
-    t.text "body"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["user_id", "created_at"], name: "index_notes_on_user_id_and_created_at"
-    t.index ["user_id"], name: "index_notes_on_user_id"
   end
 
   create_table "refresh_tokens", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -104,6 +148,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_000002) do
     t.bigint "otp_last_used_step"
     t.string "otp_backup_code_digests", default: [], null: false, array: true
     t.datetime "anonymized_at"
+    t.datetime "deactivated_at"
+    t.string "time_zone", default: "America/Sao_Paulo", null: false
+    t.boolean "due_alerts_enabled", default: true, null: false
+    t.integer "due_alert_days_before", default: 1, null: false
+    t.date "due_alerts_sent_on"
     t.index ["anonymized_at"], name: "index_users_on_anonymized_at"
     t.index ["confirmed_at"], name: "index_users_on_confirmed_at"
     t.index ["email"], name: "index_users_on_email", unique: true
@@ -111,8 +160,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_000002) do
   end
 
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "balances", "users"
   add_foreign_key "consents", "users", on_delete: :cascade
+  add_foreign_key "entries", "categories"
+  add_foreign_key "entries", "entry_series", column: "series_id"
+  add_foreign_key "entries", "users"
+  add_foreign_key "entry_series", "users"
   add_foreign_key "identities", "users"
-  add_foreign_key "notes", "users"
   add_foreign_key "refresh_tokens", "users", on_delete: :cascade
 end
