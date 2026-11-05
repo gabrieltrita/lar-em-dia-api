@@ -52,6 +52,8 @@ info:
     | `two_factor_already_enabled` | 422 | 2FA is already enabled |
     | `two_factor_not_enabled` | 422 | 2FA is not enabled |
     | `consent_required` | 422 | Required consent cannot be revoked |
+    | `only_for_single_entry` | 422 | `status` or `paid_on` changed with an entry `scope` other than `one` |
+    | `installment_amount_locked` | 422 | An installment's `amount_cents` changed with a `scope` other than `one` |
     | `rate_limited` | 429 | Too many requests, see `Retry-After` |
     | `internal_error` | 500 | Unexpected error |
     | `oauth_provider_unavailable` | 503 | The provider's signing keys could not be fetched |
@@ -1006,6 +1008,15 @@ paths:
     patch:
       tags: [Entries]
       summary: Update an entry
+      description: |
+        With `scope` `following` or `all` on an entry of a series, `category_id`, `nature`, `description` and
+        `amount_cents` are applied to this entry and the following ones (or to every entry of the series), and a new
+        `due_on` moves each of them by the same offset, keeping the month end adjustment of `POST /entry_series`. It is
+        all or nothing. `status` and `paid_on` only change with `one` (`only_for_single_entry` otherwise), and an
+        installment's `amount_cents` too (`installment_amount_locked`); sending them unchanged is accepted. An entry
+        outside a series ignores `scope`.
+      parameters:
+        - $ref: "#/components/parameters/EntryScope"
       requestBody:
         required: true
         content:
@@ -1014,15 +1025,27 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Entry" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "422": { $ref: "#/components/responses/ValidationError" }
+        "422":
+          description: Invalid data (`validation_failed`), or a field that only changes with scope `one` (`only_for_single_entry`, `installment_amount_locked`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     put:
       tags: [Entries]
       summary: Same as PATCH
+      parameters:
+        - $ref: "#/components/parameters/EntryScope"
       responses:
         "200": { $ref: "#/components/responses/Entry" }
     delete:
       tags: [Entries]
       summary: Delete an entry
+      description: |
+        `scope` `following` deletes this entry and the following ones of its series and updates the series'
+        `entries_count` (and `total_cents` for installments); `all` deletes the whole series. A series left without
+        entries is deleted too.
+      parameters:
+        - $ref: "#/components/parameters/EntryScope"
       responses:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1223,6 +1246,12 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    EntryScope:
+      name: scope
+      in: query
+      required: false
+      description: Which entries of the series to change; ignored outside a series
+      schema: { type: string, enum: [one, following, all], default: one }
     TokenTransport:
       name: X-Token-Transport
       in: header
