@@ -147,4 +147,110 @@ RSpec.describe "Entries", type: :request do
     get "/api/v1/entries/#{others.id}", headers: auth_headers(create(:user, :admin))
     expect(response).to have_http_status(:not_found)
   end
+
+  describe "series scopes" do
+    let(:housing) { create(:category, key: "housing", kind: :expense, default_nature: :fixed) }
+    let(:recurring) { create_series(entries_count: 4, amount_cents: 200_000, due_on: "2026-01-31") }
+    let(:installments) { create_series(kind: "installments", entries_count: 3, total_cents: 100_00, due_on: "2026-11-10") }
+
+    def create_series(**options)
+      attributes = { category_id: housing.id, description: "Rent", amount_cents: options.delete(:amount_cents), due_on: options.delete(:due_on) }
+      creator = EntrySeriesCreator.new(user: user, attributes: attributes, count: options.delete(:entries_count), direction: "forward", **options)
+      creator.call
+      creator.series
+    end
+
+    def entry_at(series, position)
+      series.entries.find_by!(series_position: position)
+    end
+
+    it "edits this and the following entries, moving their day of the month" do
+      second = entry_at(recurring, 2)
+      patch "/api/v1/entries/#{second.id}", params: { scope: "following", description: "New rent", amount_cents: 210_000, due_on: "2026-02-15", status: "pending" },
+                                            headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "due_on")).to eq("2026-02-15")
+      entries = recurring.entries.reload
+      expect(entries.map(&:description)).to eq([ "Rent", "New rent", "New rent", "New rent" ])
+      expect(entries.map(&:amount_cents)).to eq([ 200_000, 210_000, 210_000, 210_000 ])
+      expect(entries.map(&:due_on).map(&:iso8601)).to eq(%w[2026-01-31 2026-02-15 2026-03-15 2026-04-15])
+    end
+
+    it "edits every entry, keeping the month end adjustment" do
+      patch "/api/v1/entries/#{entry_at(recurring, 3).id}", params: { scope: "all", due_on: "2026-03-30" }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(recurring.entries.reload.map(&:due_on).map(&:iso8601)).to eq(%w[2026-01-30 2026-02-28 2026-03-30 2026-04-30])
+    end
+
+    it "rejects status and paid_on changes outside a single entry" do
+      patch "/api/v1/entries/#{entry_at(recurring, 1).id}", params: { scope: "all", status: "paid", paid_on: "2026-01-31" }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json.dig("error", "code")).to eq("only_for_single_entry")
+      expect(recurring.entries.reload).to all(be_pending)
+    end
+
+    it "locks the amount of installments outside a single entry" do
+      first = entry_at(installments, 1)
+      patch "/api/v1/entries/#{first.id}", params: { scope: "following", amount_cents: 5_000 }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json.dig("error", "code")).to eq("installment_amount_locked")
+
+      patch "/api/v1/entries/#{first.id}", params: { scope: "all", amount_cents: first.amount_cents, description: "Sofa" }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(installments.entries.reload.map(&:description)).to all(eq("Sofa"))
+    end
+
+    it "rolls every entry back when one is invalid" do
+      patch "/api/v1/entries/#{entry_at(recurring, 1).id}", params: { scope: "all", description: "" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json.dig("error", "details", "description", 0, "code")).to eq("blank")
+
+      patch "/api/v1/entries/#{entry_at(recurring, 1).id}", params: { scope: "all", due_on: "not a date" }, headers: headers, as: :json
+      expect(json.dig("error", "details", "due_on", 0, "code")).to eq("blank")
+      expect(recurring.entries.reload.map(&:description)).to all(eq("Rent"))
+    end
+
+    it "changes only the entry with scope one or without a series" do
+      patch "/api/v1/entries/#{entry_at(recurring, 1).id}", params: { scope: "one", status: "paid", paid_on: "2026-01-31" }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(recurring.entries.reload.map(&:status)).to eq(%w[paid pending pending pending])
+
+      single = create(:entry, user: user, category: salary)
+      patch "/api/v1/entries/#{single.id}", params: { scope: "all", status: "paid", paid_on: single.due_on.iso8601 }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(single.reload).to be_paid
+    end
+
+    it "deletes this and the following entries and recounts the series" do
+      delete "/api/v1/entries/#{entry_at(installments, 2).id}", params: { scope: "following" }, headers: headers
+
+      expect(response).to have_http_status(:no_content)
+      expect(installments.reload.entries_count).to eq(1)
+      expect(installments.total_cents).to eq(installments.entries.sum(:amount_cents))
+
+      delete "/api/v1/entries/#{entry_at(recurring, 3).id}", params: { scope: "following" }, headers: headers
+      expect(recurring.reload).to have_attributes(entries_count: 2, total_cents: nil)
+    end
+
+    it "deletes the whole series" do
+      delete "/api/v1/entries/#{entry_at(recurring, 2).id}", params: { scope: "all" }, headers: headers
+
+      expect(response).to have_http_status(:no_content)
+      expect(EntrySeries.exists?(recurring.id)).to be(false)
+      expect(Entry.where(series_id: recurring.id)).to be_empty
+    end
+
+    it "deletes one entry and drops the series once it is empty" do
+      delete "/api/v1/entries/#{entry_at(installments, 1).id}", headers: headers
+      expect(installments.reload.entries_count).to eq(3)
+
+      delete "/api/v1/entries/#{entry_at(installments, 2).id}", params: { scope: "following" }, headers: headers
+      expect(response).to have_http_status(:no_content)
+      expect(EntrySeries.exists?(installments.id)).to be(false)
+    end
+  end
 end

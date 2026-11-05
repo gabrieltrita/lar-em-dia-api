@@ -9,6 +9,14 @@ RSpec.describe EntrySeries do
 
   it { is_expected.to validate_absence_of(:total_cents) }
 
+  it "keeps a saved series with a single entry left" do
+    series.save!
+    series.entries_count = 1
+    expect(series).to be_valid
+    series.entries_count = 0
+    expect(series).not_to be_valid
+  end
+
   context "with installments" do
     subject(:series) { build(:entry_series, kind: :installments, entries_count: 3, total_cents: 10_000) }
 

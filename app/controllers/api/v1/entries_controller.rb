@@ -3,6 +3,11 @@ module Api
     class EntriesController < ApplicationController
       include Paginatable
 
+      SCOPE_ERRORS = {
+        "only_for_single_entry" => "status and paid_on can only change on a single entry (scope one)",
+        "installment_amount_locked" => "The amount of an installment can only change on a single entry (scope one)"
+      }.freeze
+
       before_action :set_entry, only: %i[show update destroy]
 
       def index
@@ -29,15 +34,18 @@ module Api
       end
 
       def update
-        if @entry.update(entry_params)
-          render json: { data: EntryBlueprint.render_as_hash(@entry) }
+        change = EntryScope.new(@entry, params[:scope])
+        if change.update(entry_params)
+          render json: { data: EntryBlueprint.render_as_hash(@entry.reload) }
+        elsif change.error_code
+          render_error(status: :unprocessable_content, code: change.error_code, message: SCOPE_ERRORS.fetch(change.error_code))
         else
-          render_validation_errors(@entry)
+          render_validation_errors(change.invalid_entry)
         end
       end
 
       def destroy
-        @entry.destroy!
+        EntryScope.new(@entry, params[:scope]).destroy
         head :no_content
       end
 
