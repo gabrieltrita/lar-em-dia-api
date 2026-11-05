@@ -62,7 +62,7 @@ class Projection
 
   def net_between(after, through)
     range = after.next_day..through
-    @entries.where(due_on: range).sum(SIGNED_AMOUNT) + @extra_entries.select { |entry| range.cover?(entry.due_on) }.sum { |entry| signed(entry) }
+    @entries.where(due_on: range).sum(SIGNED_AMOUNT).to_i + @extra_entries.select { |entry| range.cover?(entry.due_on) }.sum { |entry| signed(entry) }
   end
 
   def signed(entry)
