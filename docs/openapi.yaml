@@ -22,7 +22,7 @@ info:
     | `bad_request` | 400 | Missing parameter or malformed JSON |
     | `invalid_date` | 400 | A date query parameter is not `YYYY-MM-DD` |
     | `invalid_month` | 400 | A month query parameter is not `YYYY-MM` |
-    | `invalid_months` | 400 | `months` is not an integer from 1 to 24 |
+    | `invalid_months` | 400 | `months` is not an integer from 1 to 24 or `all` |
     | `missing_token` | 401 | No `Authorization` header, or no refresh cookie on `POST /auth/refresh` in cookie mode |
     | `invalid_token` | 401 | Invalid, expired or wrong-type token |
     | `token_revoked` | 401 | Access token revoked by logout |
@@ -1087,7 +1087,13 @@ paths:
         before the anchor). Pending and paid entries both count, by due date.
       parameters:
         - { name: from, in: query, description: First month; defaults to the current month, schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" } }
-        - { name: months, in: query, description: Number of months, schema: { type: integer, minimum: 1, maximum: 24, default: 12 } }
+        - name: months
+          in: query
+          description: Number of months, or `all` to project through the month of the user's last entry (at least 1 and at most 60 months)
+          schema:
+            oneOf:
+              - { type: integer, minimum: 1, maximum: 24, default: 12 }
+              - { type: string, enum: [all] }
       responses:
         "200":
           description: Month by month projection
@@ -1116,7 +1122,11 @@ paths:
               required: [entries]
               properties:
                 from: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11", description: First month; defaults to the current month }
-                months: { type: integer, minimum: 1, maximum: 24, default: 12 }
+                months:
+                  description: Number of months, or `all` to project through the month of the last entry, simulated ones included (at most 60)
+                  oneOf:
+                    - { type: integer, minimum: 1, maximum: 24, default: 12 }
+                    - { type: string, enum: [all] }
                 entries:
                   type: array
                   minItems: 1
@@ -1494,8 +1504,9 @@ components:
         due_alert_days_before: { type: integer, minimum: 0, maximum: 7, description: "Outside 0 to 7 answers `inclusion`" }
     Projection:
       type: object
-      required: [anchor, months, alerts]
+      required: [anchor, months, alerts, last_entry_month]
       properties:
+        last_entry_month: { type: [string, "null"], example: "2028-08", description: Month of the user's latest entry due date (simulated entries included); null without entries }
         anchor:
           type: [object, "null"]
           required: [amount_cents, as_of]
@@ -1513,7 +1524,7 @@ components:
             negative_months_count: { type: integer, minimum: 0 }
     ProjectionMonth:
       type: object
-      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative]
+      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative, expense_by_category]
       properties:
         month: { type: string, example: "2026-11" }
         opening_cents: { type: integer }
@@ -1524,6 +1535,15 @@ components:
         closing_cents: { type: integer, description: May be negative }
         savings_cents: { type: integer, description: Income minus expenses from the first projected month through this one; may be negative }
         negative: { type: boolean, description: The month closes below zero }
+        expense_by_category:
+          type: array
+          description: Expenses of the month summed by category, largest first (ties by key)
+          items:
+            type: object
+            required: [category_key, amount_cents]
+            properties:
+              category_key: { type: string, example: housing }
+              amount_cents: { type: integer, minimum: 0 }
     AdminMetrics:
       type: object
       required: [users, engagement, signups_by_week]

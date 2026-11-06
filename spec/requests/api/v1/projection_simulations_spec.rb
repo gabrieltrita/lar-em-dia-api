@@ -37,6 +37,16 @@ RSpec.describe "Projection simulation", type: :request do
     expect(json.dig("data", "simulated", "anchor")).to eq("amount_cents" => 100_000, "as_of" => "2026-11-01")
   end
 
+  it "projects through the last simulated entry with months all" do
+    simulate([ { category_id: expense.id, description: "Car", due_on: "2026-12-05", kind: "installments", total_cents: 360_000, entries_count: 36 } ], months: "all")
+
+    expect(response).to have_http_status(:ok)
+    expect(json.dig("data", "simulated", "months").size).to eq(37)
+    expect(json.dig("data", "simulated", "last_entry_month")).to eq("2029-11")
+    expect(json.dig("data", "simulated", "months", 1, "expense_by_category")).to eq([ { "category_key" => expense.key, "amount_cents" => 10_000 } ])
+    expect(json.dig("data", "baseline", "last_entry_month")).to be_nil
+  end
+
   it "simulates installments and recurring income together" do
     simulate(
       [
