@@ -1,6 +1,8 @@
 class Projection
   MONTHS_RANGE = (1..24)
   DEFAULT_MONTHS = 12
+  ALL_MONTHS = :all
+  ALL_MONTHS_LIMIT = 60
   SIGNED_AMOUNT = Arel.sql("CASE WHEN kind = 'income' THEN amount_cents ELSE -amount_cents END")
   MONTH_OF_DUE_ON = Arel.sql("date_trunc('month', due_on)::date")
 
@@ -10,8 +12,12 @@ class Projection
     @entries = user.entries
     @extra_entries = extra_entries
     @from = from.beginning_of_month
-    @months = months
     @anchor = user.balances.recent.first
+    @months = months == ALL_MONTHS ? months_until_last_entry : months
+  end
+
+  def last_entry_month
+    last_due_on&.strftime("%Y-%m")
   end
 
   def months
@@ -47,8 +53,28 @@ class Projection
       variable_expense_cents: variable,
       closing_cents: closing,
       savings_cents: closing - start,
-      negative: closing.negative?
+      negative: closing.negative?,
+      expense_by_category: expense_by_category(month)
     }
+  end
+
+  def expense_by_category(month)
+    category_totals.fetch(month, {})
+      .sort_by { |key, cents| [ -cents, key ] }
+      .map { |key, cents| { category_key: key, amount_cents: cents } }
+  end
+
+  def last_due_on
+    return @last_due_on if defined?(@last_due_on)
+
+    @last_due_on = [ @entries.maximum(:due_on), *@extra_entries.map(&:due_on) ].compact.max
+  end
+
+  def months_until_last_entry
+    return 1 unless last_due_on && last_due_on >= @from
+
+    span = (last_due_on.year - @from.year) * 12 + last_due_on.month - @from.month + 1
+    [ span, ALL_MONTHS_LIMIT ].min
   end
 
   def opening_balance
@@ -73,9 +99,13 @@ class Projection
     Array.new(@months) { |offset| @from >> offset }
   end
 
+  def period
+    @from..month_starts.last.end_of_month
+  end
+
   def monthly_totals
     @monthly_totals ||= @entries
-      .where(due_on: @from..month_starts.last.end_of_month)
+      .where(due_on: period)
       .group(MONTH_OF_DUE_ON, :kind, :nature)
       .sum(:amount_cents)
       .each_with_object(Hash.new { |hash, key| hash[key] = Hash.new(0) }) do |((month, kind, nature), cents), totals|
@@ -85,11 +115,31 @@ class Projection
   end
 
   def add_extra_entries(totals)
-    period = @from..month_starts.last.end_of_month
-    @extra_entries.each do |entry|
-      next unless period.cover?(entry.due_on)
-
+    extra_entries_in_period.each do |entry|
       totals[entry.due_on.beginning_of_month][[ entry.kind, entry.nature ]] += entry.amount_cents
     end
+  end
+
+  def category_totals
+    @category_totals ||= @entries
+      .expense
+      .where(due_on: period)
+      .joins(:category)
+      .group(MONTH_OF_DUE_ON, "categories.key")
+      .sum(:amount_cents)
+      .each_with_object(Hash.new { |hash, key| hash[key] = Hash.new(0) }) do |((month, key), cents), totals|
+        totals[month][key] += cents
+      end
+      .tap { |totals| add_extra_categories(totals) }
+  end
+
+  def add_extra_categories(totals)
+    extra_entries_in_period.select(&:expense?).each do |entry|
+      totals[entry.due_on.beginning_of_month][entry.category.key] += entry.amount_cents
+    end
+  end
+
+  def extra_entries_in_period
+    @extra_entries.select { |entry| period.cover?(entry.due_on) }
   end
 end

@@ -24,7 +24,7 @@ module Api
       def require_period
         return render_error(status: :bad_request, code: "invalid_month", message: "from must be a month (YYYY-MM)") unless from
 
-        render_error(status: :bad_request, code: "invalid_months", message: "months must be an integer from 1 to 24") unless months
+        render_error(status: :bad_request, code: "invalid_months", message: "months must be an integer from 1 to 24 or all") unless months
       end
 
       def projection(extra_entries = [])
@@ -32,7 +32,7 @@ module Api
       end
 
       def projection_json(projection)
-        { anchor: anchor_json(projection.anchor), months: projection.months, alerts: projection.alerts }
+        { anchor: anchor_json(projection.anchor), months: projection.months, alerts: projection.alerts, last_entry_month: projection.last_entry_month }
       end
 
       def simulation_inputs
@@ -51,6 +51,7 @@ module Api
 
       def months
         return Projection::DEFAULT_MONTHS if params[:months].blank?
+        return Projection::ALL_MONTHS if params[:months].to_s == Projection::ALL_MONTHS.to_s
 
         value = Integer(params[:months].to_s, 10, exception: false)
         value if Projection::MONTHS_RANGE.cover?(value)
