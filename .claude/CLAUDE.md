@@ -60,7 +60,8 @@ app/policies/              ApplicationPolicy, UserPolicy, AuditLogPolicy
 app/services/auth/         JsonWebToken, TokenIssuer, RefreshTokenRotator, TokenDenylist, TwoFactorChallenge, OauthSignin, oauth/JwksVerifier (+ GoogleVerifier, AppleVerifier), oauth/Providers, oauth/AppleRevoker, Unauthorized/InvalidCredentials/InvalidToken/ReauthenticationFailed/ProviderUnavailable
 app/services/user_data_export.rb
 lib/env_validator.rb       production boot validation (EnvValidator)
-config/deploy.yml          Kamal deploy (web, job, Postgres and Redis accessories); name from config/app.yml, server details from the environment
+config/deploy.yml          Kamal deploy (web, job, Postgres, Redis and backup accessories); name from config/app.yml, server details from the environment
+config/db_backup.sh        daily pg_dump run by the backup accessory (14 days kept in ~/<service>-backup/backups)
 .kamal/secrets             references to environment variables for Kamal, never values
 config/deploy.staging.yml  staging destination (bin/kamal ... -d staging); .kamal/secrets.staging reads the same secrets from STAGING_ variables
 .github/workflows/deploy.yml   CD: staging from main, production from a version tag on main, and a manual run on main that prepares the server and runs kamal setup; .github/actions/kamal-deploy builds (QEMU for arm64), deploys and checks /health

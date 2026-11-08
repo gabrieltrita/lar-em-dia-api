@@ -20,9 +20,9 @@ RSpec.describe "Kamal deploy configuration" do
   let(:config) { render("config/deploy.yml") }
   let(:staging) { config.deep_merge(render("config/deploy.staging.yml")) }
   let(:secret_names) do
-    config.dig("env", "secret") +
+    (config.dig("env", "secret") +
       config["accessories"].values.flat_map { |accessory| accessory.dig("env", "secret").to_a } +
-      config.dig("registry", "password")
+      config.dig("registry", "password")).uniq
   end
 
   def with_env(vars)
@@ -65,6 +65,18 @@ RSpec.describe "Kamal deploy configuration" do
   it "runs Sidekiq as its own role and publishes no database or Redis port" do
     expect(config.dig("servers", "job", "cmd")).to eq("bundle exec sidekiq -C config/sidekiq.yml")
     expect(config["accessories"].values.map { |accessory| accessory["port"] }).to all(be_nil)
+  end
+
+  it "backs up the database every day with the Postgres image and the app's own connection string" do
+    backup = config.dig("accessories", "backup")
+
+    expect(backup["image"]).to eq(config.dig("accessories", "db", "image"))
+    expect(backup["cmd"]).to eq("bash -c 'while true; do if bash /usr/local/bin/db_backup.sh; then sleep 86400; else sleep 3600; fi; done'")
+    expect(backup["files"]).to eq([ "config/db_backup.sh:/usr/local/bin/db_backup.sh" ])
+    expect(backup["directories"]).to eq([ "backups:/backups" ])
+    expect(backup.dig("env", "secret")).to eq([ "DATABASE_URL" ])
+    expect(backup.dig("env", "clear", "BACKUP_RETENTION_DAYS")).to eq("14")
+    expect(staging.dig("accessories", "backup")).to eq(backup)
   end
 
   it "serializes empty optional values as strings" do
