@@ -152,7 +152,7 @@ Two health endpoints, both public and outside `/api/v1`:
 
 ### Deploying with Kamal
 
-`config/deploy.yml` runs the API (`web`) and Sidekiq (`job`) behind kamal-proxy with automatic TLS, plus Postgres 17 and Redis 7 as accessories on the same server, with no published ports. The app name comes from `config/app.yml`; everything specific to your server comes from the environment of the machine that runs `bin/kamal`, never from the repository.
+`config/deploy.yml` runs the API (`web`) and Sidekiq (`job`) behind kamal-proxy with automatic TLS, plus Postgres 17, Redis 7 and a daily database backup as accessories on the same server, with no published ports. The app name comes from `config/app.yml`; everything specific to your server comes from the environment of the machine that runs `bin/kamal`, never from the repository.
 
 Before the first deploy: an Ubuntu server reachable by SSH key with ports 80 and 443 open, a DNS A record for the API host, and a GitHub token with `write:packages` (images go to `ghcr.io`).
 
@@ -164,7 +164,13 @@ Variables to export (shell or password manager; `.kamal/secrets` only holds refe
 
 Commands: `bin/kamal setup` the first time (installs Docker, boots the accessories, the proxy and the app), `bin/kamal deploy` afterwards, `bin/kamal rollback VERSION`, and the aliases `bin/kamal console`, `shell`, `logs` and `dbc`. The web container runs `db:prepare` on start, so migrations apply on every deploy.
 
-Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes. Database backups arrive with phase 4.4; until then take `pg_dump` by hand.
+Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes.
+
+### Database backups
+
+The `backup` accessory (the same `postgres:17` image, with `DATABASE_URL`) runs `config/db_backup.sh` when it boots and then every 24 hours, retrying after an hour when a dump fails (for example while Postgres is still starting). Each run writes `pg_dump --no-owner --no-acl`, gzipped, to `<YYYY-MM-DD>.sql.gz` in `~/<service>-backup/backups` on the server (`<slug>-api-backup`, or `<slug>-api-staging-backup` for staging), through a `.partial` file so a failed dump never replaces a good one, and deletes dumps older than `BACKUP_RETENTION_DAYS` (14). `bin/kamal setup` boots it; on a server that was set up before it existed, run `bin/kamal accessory boot backup` (or the Deploy workflow by hand, which runs `kamal setup`).
+
+The dumps live on the same disk as the database, so they cover mistakes and bad migrations, not the loss of the server: copy them elsewhere from time to time (`scp`). `bin/kamal backups` lists them. To restore one into an empty database, stop the app (`bin/kamal app stop`), open a shell in the accessory (`bin/kamal accessory exec backup --interactive --reuse bash`), run `gunzip -c /backups/2026-11-08.sql.gz | psql --single-transaction "$DATABASE_URL"` there, and start the app again (`bin/kamal app boot`). A dump only reads back with the same `AR_ENCRYPTION_*` keys, which are not in it.
 
 ### Staging with Kamal
 
@@ -200,7 +206,7 @@ install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
 
 By hand instead of `bin/deploy-secrets`: `ssh-keygen -t ed25519 -N "" -C ci-deploy -f deploy_key`, append `deploy_key.pub` to `/home/deploy/.ssh/authorized_keys`, run `ssh-keyscan -t ed25519 <host> > known_hosts` and check its fingerprint against `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server, then `gh secret set DEPLOY_SSH_PRIVATE_KEY < deploy_key` and `gh secret set DEPLOY_SSH_KNOWN_HOSTS < known_hosts` (and delete the local files). Set `DEPLOY_SSH_USER` to `deploy`. Members of the `docker` group are root-equivalent on that server, so use a key that is only for this.
 
-Releasing: promote `dev` with a `release/YYYY-MM-DD` branch and a PR to `main`; the merge deploys staging; when staging looks right, `git tag 0.3.0 origin/main && git push origin 0.3.0` deploys production. Database backups arrive with phase 4.4.
+Releasing: promote `dev` with a `release/YYYY-MM-DD` branch and a PR to `main`; the merge deploys staging; when staging looks right, `git tag 0.3.0 origin/main && git push origin 0.3.0` deploys production.
 
 ## Features and how to use them
 
