@@ -82,9 +82,23 @@ accessories:
         - REDIS_PASSWORD
     directories:
       - data:/data
+  backup:
+    image: postgres:17
+    host: <%= ENV.fetch("DEPLOY_HOST") %>
+    cmd: bash -c 'while true; do if bash /usr/local/bin/db_backup.sh; then sleep 86400; else sleep 3600; fi; done'
+    env:
+      clear:
+        BACKUP_RETENTION_DAYS: "14"
+      secret:
+        - DATABASE_URL
+    files:
+      - config/db_backup.sh:/usr/local/bin/db_backup.sh
+    directories:
+      - backups:/backups
 
 aliases:
   console: app exec --interactive --reuse "bin/rails console"
   shell: app exec --interactive --reuse bash
   logs: app logs -f
   dbc: app exec --interactive --reuse "bin/rails dbconsole"
+  backups: accessory exec backup "ls -lh /backups"
