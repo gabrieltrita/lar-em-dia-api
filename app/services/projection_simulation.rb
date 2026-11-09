@@ -41,7 +41,8 @@ class ProjectionSimulation
       count: input[:entries_count],
       direction: input[:direction],
       kind: input[:kind],
-      total_cents: input[:total_cents]
+      total_cents: input[:total_cents],
+      interval_months: input[:interval_months]
     )
     [ creator.series, creator.build ]
   end

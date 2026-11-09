@@ -8,6 +8,11 @@ RSpec.describe EntrySeries do
   it { is_expected.to validate_inclusion_of(:direction).in_array(%w[forward backward]).on(:create) }
 
   it { is_expected.to validate_absence_of(:total_cents) }
+  it { is_expected.to validate_inclusion_of(:interval_months).in_array([ 1, 3, 6, 12 ]) }
+
+  it "repeats monthly by default" do
+    expect(series.interval_months).to eq(1)
+  end
 
   it "keeps a saved series with a single entry left" do
     series.save!

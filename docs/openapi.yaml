@@ -1011,7 +1011,8 @@ paths:
       description: |
         With `scope` `following` or `all` on an entry of a series, `category_id`, `nature`, `description` and
         `amount_cents` are applied to this entry and the following ones (or to every entry of the series), and a new
-        `due_on` moves each of them by the same offset, keeping the month end adjustment of `POST /entry_series`. It is
+        `due_on` moves each of them by the same offset, keeping the series' `interval_months` and the month end
+        adjustment of `POST /entry_series`. It is
         all or nothing. `status` and `paid_on` only change with `one` (`only_for_single_entry` otherwise), and an
         installment's `amount_cents` too (`installment_amount_locked`); sending them unchanged is accepted. An entry
         outside a series ignores `scope`.
@@ -1052,15 +1053,17 @@ paths:
   /entry_series:
     post:
       tags: [Entries]
-      summary: Create a recurring or installments series of monthly entries
+      summary: Create a recurring or installments series of entries
       description: |
-        Creates `entries_count` entries (the first included) on the same day of consecutive months; a month without
-        that day uses its last day. Entries due up to today take the sent status (paid ones with `paid_on` on their due
+        Creates `entries_count` entries (the first included) on the same day of every month, or of every
+        `interval_months` months; a month without that day uses its last day. Entries due up to today take the sent status (paid ones with `paid_on` on their due
         date); later ones are pending. All or nothing: an invalid entry answers the same `details` as `POST /entries`.
 
-        - `recurring` (default): 2 to 36 entries of `amount_cents`, forwards or backwards from `due_on`.
-        - `installments`: expenses only, 2 to 48 entries, always forwards. `total_cents` is split into equal
-          installments and the leftover cents go to the first one; `amount_cents` and `direction` are ignored.
+        - `recurring` (default): 2 to 36 entries of `amount_cents`, forwards or backwards from `due_on`, monthly
+          (`interval_months` 1, the default), quarterly (3), semiannually (6) or yearly (12).
+        - `installments`: expenses only, 2 to 48 entries, always monthly and forwards. `total_cents` is split into
+          equal installments and the leftover cents go to the first one; `amount_cents`, `direction` and
+          `interval_months` are ignored.
       requestBody:
         required: true
         content:
@@ -1143,6 +1146,7 @@ paths:
                       entries_count: { type: integer, minimum: 2, maximum: 48, description: Simulates a series, as in `POST /entry_series` }
                       kind: { type: string, enum: [recurring, installments], default: recurring }
                       direction: { type: string, enum: [forward, backward] }
+                      interval_months: { type: integer, enum: [1, 3, 6, 12], default: 1, description: Recurring only }
                       total_cents: { type: integer, description: Installments only }
       responses:
         "200":
@@ -1479,12 +1483,14 @@ components:
         paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
         entries_count: { type: integer, minimum: 2, maximum: 48, description: Number of entries, the first included; up to 36 for recurring }
         direction: { type: string, enum: [forward, backward], description: Recurring only; following or previous months }
+        interval_months: { type: integer, enum: [1, 3, 6, 12], default: 1, description: Recurring only; months between two entries }
     EntrySeries:
       type: object
-      required: [id, kind, entries_count, entries]
+      required: [id, kind, interval_months, entries_count, entries]
       properties:
         id: { type: string, format: uuid }
         kind: { type: string, enum: [recurring, installments] }
+        interval_months: { type: integer, enum: [1, 3, 6, 12], description: Months between two entries; always 1 for installments }
         entries_count: { type: integer }
         total_cents: { type: [integer, "null"], description: Installments only }
         created_at: { type: string, format: date-time }

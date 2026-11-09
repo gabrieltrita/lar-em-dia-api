@@ -7,8 +7,9 @@ RSpec.describe EntrySeriesCreator do
 
   around { |example| travel_to(Date.new(2026, 11, 20)) { example.run } }
 
-  def create_series(count: 3, direction: "forward", kind: nil, total_cents: nil, **overrides)
-    creator = described_class.new(user: user, attributes: attributes.merge(overrides), count: count, direction: direction, kind: kind, total_cents: total_cents)
+  def create_series(count: 3, direction: "forward", kind: nil, total_cents: nil, interval_months: nil, **overrides)
+    creator = described_class.new(user: user, attributes: attributes.merge(overrides), count: count, direction: direction, kind: kind, total_cents: total_cents,
+                                  interval_months: interval_months)
     [ creator.call, creator.series ]
   end
 
@@ -33,6 +34,26 @@ RSpec.describe EntrySeriesCreator do
     _, series = create_series(due_on: Date.new(2027, 1, 31))
 
     expect(series.entries.map { |entry| entry.due_on.iso8601 }).to eq(%w[2027-01-31 2027-02-28 2027-03-31])
+  end
+
+  it "repeats every few months on the same day" do
+    _, series = create_series(interval_months: 6)
+
+    expect(series.reload.interval_months).to eq(6)
+    expect(series.entries.map { |entry| entry.due_on.iso8601 }).to eq(%w[2026-11-05 2027-05-05 2027-11-05])
+  end
+
+  it "repeats yearly backwards, using the last day of February outside leap years" do
+    _, series = create_series(interval_months: 12, direction: "backward", due_on: Date.new(2028, 2, 29))
+
+    expect(series.entries.map { |entry| entry.due_on.iso8601 }).to eq(%w[2026-02-28 2027-02-28 2028-02-29])
+  end
+
+  it "refuses an interval outside the list" do
+    created, series = create_series(interval_months: 2)
+
+    expect(created).to be(false)
+    expect(series.errors.details[:interval_months]).to eq([ { error: :inclusion, value: 2 } ])
   end
 
   it "marks the copies due up to today as paid on their due dates and the later ones as pending" do
@@ -77,11 +98,11 @@ RSpec.describe EntrySeriesCreator do
     let(:card) { create(:category, :expense) }
     let(:attributes) { { category_id: card.id, description: "Sofa", amount_cents: 1, due_on: Date.new(2026, 11, 10) } }
 
-    it "splits the total forwards whatever the direction" do
-      created, series = create_series(kind: "installments", total_cents: 100_000, direction: "backward")
+    it "splits the total monthly forwards whatever the direction and interval" do
+      created, series = create_series(kind: "installments", total_cents: 100_000, direction: "backward", interval_months: 12)
 
       expect(created).to be(true)
-      expect(series.reload).to have_attributes(kind: "installments", total_cents: 100_000, entries_count: 3)
+      expect(series.reload).to have_attributes(kind: "installments", total_cents: 100_000, entries_count: 3, interval_months: 1)
       expect(series.entries.map { |entry| [ entry.due_on.iso8601, entry.amount_cents ] }).to eq(
         [ [ "2026-11-10", 33_334 ], [ "2026-12-10", 33_333 ], [ "2027-01-10", 33_333 ] ]
       )

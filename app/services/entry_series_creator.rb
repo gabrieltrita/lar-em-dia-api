@@ -1,11 +1,12 @@
 class EntrySeriesCreator
   attr_reader :series
 
-  def initialize(user:, attributes:, count:, direction:, kind: nil, total_cents: nil)
+  def initialize(user:, attributes:, count:, direction:, kind: nil, total_cents: nil, interval_months: nil)
     @user = user
     @attributes = attributes
     @series = user.entry_series.new(kind: kind.presence || "recurring", entries_count: count, direction: direction, total_cents: total_cents)
-    @series.direction = "forward" if @series.installments?
+    @series.interval_months = interval_months if interval_months.present?
+    monthly_forward! if @series.installments?
   end
 
   def call
@@ -29,6 +30,11 @@ class EntrySeriesCreator
 
   private
 
+  def monthly_forward!
+    @series.direction = "forward"
+    @series.interval_months = 1
+  end
+
   def valid?(base)
     series_valid = @series.valid?
     base.amount_cents = @series.installment_amounts.first if @series.installments? && series_valid
@@ -49,7 +55,7 @@ class EntrySeriesCreator
   end
 
   def due_dates(due_on)
-    offsets = (0...@series.entries_count).to_a
+    offsets = (0...@series.entries_count).map { |index| index * @series.interval_months }
     dates = offsets.map { |offset| @series.direction == "forward" ? due_on >> offset : due_on << offset }
     dates.sort
   end
