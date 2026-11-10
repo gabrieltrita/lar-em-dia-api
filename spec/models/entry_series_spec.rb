@@ -34,6 +34,12 @@ RSpec.describe EntrySeries do
       expect(series.errors.details[:total_cents]).to eq([ { error: :greater_than_or_equal_to, value: 2, count: 3 } ])
     end
 
+    it "caps the total at the largest amount an entry accepts" do
+      series.total_cents = Entry::MAX_AMOUNT_CENTS + 1
+      expect(series).not_to be_valid
+      expect(series.errors.details[:total_cents].pluck(:error)).to eq([ :less_than_or_equal_to ])
+    end
+
     it "requires the total" do
       series.total_cents = nil
       series.validate

@@ -58,6 +58,13 @@ RSpec.describe "Entries", type: :request do
       expect(details.dig("paid_on", 0, "code")).to eq("only_when_paid")
       expect(details.dig("category", 0, "code")).to eq("required")
     end
+
+    it "rejects an amount above the cap instead of failing in the database" do
+      post "/api/v1/entries", params: valid_params.merge(amount_cents: 10**20), headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json.dig("error", "details", "amount_cents", 0, "code")).to eq("less_than_or_equal_to")
+    end
   end
 
   describe "GET /api/v1/entries" do

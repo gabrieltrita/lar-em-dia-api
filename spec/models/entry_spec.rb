@@ -8,7 +8,7 @@ RSpec.describe Entry do
   it { is_expected.to validate_presence_of(:description) }
   it { is_expected.to validate_length_of(:description).is_at_most(200) }
   it { is_expected.to validate_presence_of(:amount_cents) }
-  it { is_expected.to validate_numericality_of(:amount_cents).only_integer.is_greater_than(0) }
+  it { is_expected.to validate_numericality_of(:amount_cents).only_integer.is_greater_than(0).is_less_than_or_equal_to(Entry::MAX_AMOUNT_CENTS) }
   it { is_expected.to validate_presence_of(:due_on) }
 
   it "encrypts the description" do

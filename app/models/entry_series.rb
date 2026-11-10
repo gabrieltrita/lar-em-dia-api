@@ -13,7 +13,7 @@ class EntrySeries < ApplicationRecord
   validates :entries_count, numericality: { only_integer: true, greater_than_or_equal_to: :minimum_count, less_than_or_equal_to: :maximum_count }
   validates :direction, inclusion: { in: DIRECTIONS }, on: :create
   validates :interval_months, inclusion: { in: INTERVALS }
-  validates :total_cents, numericality: { only_integer: true, greater_than_or_equal_to: :minimum_total_cents }, if: :installments?
+  validates :total_cents, numericality: { only_integer: true, greater_than_or_equal_to: :minimum_total_cents, less_than_or_equal_to: Entry::MAX_AMOUNT_CENTS }, if: :installments?
   validates :total_cents, absence: true, unless: :installments?
 
   def minimum_count

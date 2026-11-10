@@ -1,3 +1,6 @@
 <h1>Account temporarily locked</h1>
 <p>Hi <%= @user.first_name %>, we detected several failed login attempts and locked your account until <%= l(@locked_until, format: :long) %>.</p>
+<% if @unlock_url %>
+<p>If it was you, unlock the account and sign in with this link, valid while the lock lasts: <%= @unlock_url %></p>
+<% end %>
 <p style="color:#666;font-size:13px">If this was not you, we recommend resetting your password (it also unlocks the account): <%= @forgot_url %></p>

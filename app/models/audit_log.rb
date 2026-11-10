@@ -1,6 +1,6 @@
 class AuditLog < ApplicationRecord
   ACTIONS = %w[
-    auth.login auth.login_failed auth.login_blocked auth.locked auth.logout
+    auth.login auth.login_failed auth.login_blocked auth.locked auth.unlocked_by_email auth.logout
     auth.two_factor_failed auth.refresh_reuse_detected
     user.registered user.confirmed user.created user.updated user.anonymized
     user.role_changed user.password_changed user.password_reset_requested user.password_reset

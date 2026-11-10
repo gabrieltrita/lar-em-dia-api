@@ -99,6 +99,22 @@ RSpec.describe UserMailer, type: :mailer do
     expect(text_of(mail)).to include("#{frontend}/forgot-password")
   end
 
+  it "carries a link that unlocks the account and signs in" do
+    5.times { user.register_failed_login! }
+    mail = described_class.account_locked(user)
+
+    token = CGI.unescape(text_of(mail)[%r{/unlock\?token=([^\s]+)}, 1])
+    expect(User.find_by_token_for(:unlock, token)).to eq(user)
+    expect(mail.html_part.body.to_s).to include("#{frontend}/unlock?token=")
+  end
+
+  it "leaves the unlock link out for an unconfirmed account" do
+    pending_user = create(:user, :unconfirmed)
+    5.times { pending_user.register_failed_login! }
+
+    expect(text_of(described_class.account_locked(pending_user))).not_to include("/unlock")
+  end
+
   it "tells the owner the account was deactivated" do
     mail = described_class.account_deactivated(user)
 

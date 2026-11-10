@@ -91,6 +91,29 @@ RSpec.describe User do
     end
   end
 
+  describe "unlock by email" do
+    let(:user) { create(:user) }
+
+    def lock(account)
+      User::MAX_FAILED_ATTEMPTS.times { account.register_failed_login! }
+      account
+    end
+
+    it "is offered only to confirmed, locked and active accounts" do
+      expect(user).not_to be_unlockable_by_email
+      expect(lock(user)).to be_unlockable_by_email
+      expect(lock(create(:user, :unconfirmed))).not_to be_unlockable_by_email
+    end
+
+    it "has a token that stops working after the unlock" do
+      token = lock(user).generate_token_for(:unlock)
+      expect(User.find_by_token_for(:unlock, token)).to eq(user)
+
+      user.unlock!
+      expect(User.find_by_token_for(:unlock, token)).to be_nil
+    end
+  end
+
   describe "deactivation" do
     let(:user) { create(:user) }
 

@@ -5,7 +5,7 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
   get "health" => "health#show", as: :health_check
 
-  mount Sidekiq::Web => "/sidekiq"
+  mount Sidekiq::Web => "/sidekiq" if Rails.env.local? || ENV["ENABLE_SIDEKIQ_WEB"] == "true"
 
   if Rails.env.local? || ENV["ENABLE_API_DOCS"] == "true"
     get "docs" => "docs#index"
@@ -25,6 +25,7 @@ Rails.application.routes.draw do
         post   "email/confirm",   to: "confirmations#email_change"
         post   "password/forgot", to: "passwords#forgot"
         post   "password/reset",  to: "passwords#reset"
+        post   "unlock",          to: "unlocks#create"
         post   "oauth/google",    to: "oauth#google"
         post   "oauth/apple",     to: "oauth#apple"
       end
