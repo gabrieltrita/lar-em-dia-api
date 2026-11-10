@@ -4,7 +4,7 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
   around do |example|
     Rack::Attack.enabled = true
     Rack::Attack.reset!
-    example.run
+    travel_to(Time.current.beginning_of_minute) { example.run }
   ensure
     Rack::Attack.enabled = false
   end
