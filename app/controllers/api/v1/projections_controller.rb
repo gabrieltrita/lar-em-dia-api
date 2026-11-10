@@ -3,7 +3,7 @@ module Api
     class ProjectionsController < ApplicationController
       MONTH_FORMAT = /\A\d{4}-(0[1-9]|1[0-2])\z/
 
-      SIMULATION_ENTRY_FIELDS = %i[category_id nature description amount_cents due_on entries_count direction kind total_cents].freeze
+      SIMULATION_ENTRY_FIELDS = %i[category_id nature description amount_cents due_on entries_count direction kind total_cents interval_months].freeze
 
       before_action { authorize Projection }
       before_action :require_period

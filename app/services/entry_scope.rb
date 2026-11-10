@@ -73,7 +73,7 @@ class EntryScope
 
   def shifted_due_on(entry, value)
     due_on = ActiveModel::Type::Date.new.cast(value)
-    due_on && (due_on >> (entry.series_position - @entry.series_position))
+    due_on && (due_on >> ((entry.series_position - @entry.series_position) * @entry.series.interval_months))
   end
 
   def refresh(series)

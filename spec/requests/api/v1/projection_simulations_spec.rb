@@ -63,6 +63,14 @@ RSpec.describe "Projection simulation", type: :request do
     expect(EntrySeries.count).to eq(0)
   end
 
+  it "simulates a recurring entry in fixed months" do
+    simulate([ { category_id: expense.id, description: "Insurance", amount_cents: 20_000, due_on: "2026-11-15", entries_count: 2, direction: "forward", interval_months: 3 } ],
+             from: "2026-11", months: 4)
+
+    expect(response).to have_http_status(:ok)
+    expect(json.dig("data", "simulated", "months").pluck("expense_cents")).to eq([ 20_000, 0, 0, 20_000 ])
+  end
+
   it "counts hypothetical entries before the first month in the opening balance" do
     simulate(
       [
