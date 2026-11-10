@@ -5,7 +5,7 @@ RSpec.describe Balance do
 
   it { is_expected.to belong_to(:user) }
   it { is_expected.to validate_presence_of(:amount_cents) }
-  it { is_expected.to validate_numericality_of(:amount_cents).only_integer }
+  it { is_expected.to validate_numericality_of(:amount_cents).only_integer.is_greater_than_or_equal_to(-Entry::MAX_AMOUNT_CENTS).is_less_than_or_equal_to(Entry::MAX_AMOUNT_CENTS) }
   it { is_expected.to validate_presence_of(:as_of) }
   it { is_expected.to validate_uniqueness_of(:as_of).scoped_to(:user_id) }
 

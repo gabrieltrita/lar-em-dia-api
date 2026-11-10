@@ -60,6 +60,17 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
     expect(response).to have_http_status(:too_many_requests)
   end
 
+  it "throttles unlock links by IP" do
+    6.times { post "/api/v1/auth/unlock", params: { token: "x" }, as: :json, env: { "REMOTE_ADDR" => "10.9.9.9" } }
+    expect(response).to have_http_status(:too_many_requests)
+    expect(json.dig("error", "code")).to eq("rate_limited")
+  end
+
+  it "throttles the Sidekiq dashboard by IP" do
+    61.times { get "/sidekiq", env: { "REMOTE_ADDR" => "10.9.9.10" } }
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
   it "throttles unsubscribe links by IP" do
     11.times { post "/api/v1/me/notification_settings/unsubscribe", params: { token: "x" }, as: :json, env: { "REMOTE_ADDR" => "10.8.8.8" } }
     expect(response).to have_http_status(:too_many_requests)

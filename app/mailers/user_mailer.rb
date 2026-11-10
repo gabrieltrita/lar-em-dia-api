@@ -53,6 +53,7 @@ class UserMailer < ApplicationMailer
     @user = user
     @locked_until = user.locked_until
     @forgot_url = frontend_url("/forgot-password")
+    @unlock_url = frontend_url("/unlock?token=#{CGI.escape(user.generate_token_for(:unlock))}") if user.unlockable_by_email?
     mail to: @user.email, subject: "Your account was temporarily locked"
   end
 

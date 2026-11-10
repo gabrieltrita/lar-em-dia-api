@@ -79,6 +79,10 @@ RSpec.describe "Kamal deploy configuration" do
     expect(staging.dig("accessories", "backup")).to eq(backup)
   end
 
+  it "keeps the Sidekiq dashboard off unless the deploy turns it on" do
+    expect(config.dig("env", "clear", "ENABLE_SIDEKIQ_WEB")).to eq("false")
+  end
+
   it "serializes empty optional values as strings" do
     expect(config.dig("env", "clear", "GOOGLE_CLIENT_IDS")).to eq("")
   end

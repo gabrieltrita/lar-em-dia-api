@@ -40,6 +40,10 @@ class User < ApplicationRecord
     unconfirmed_email
   end
 
+  generates_token_for :unlock, expires_in: MAX_LOCK_DURATION do
+    locked_until&.to_i
+  end
+
   normalizes :email, :unconfirmed_email, with: ->(email) { email.strip.downcase }
   normalizes :first_name, :last_name, with: ->(value) { value.strip.squish }
   normalizes :phone, with: ->(value) { value.gsub(/[^\d+]/, "") }
@@ -132,6 +136,10 @@ class User < ApplicationRecord
 
   def access_locked?
     locked_until.present? && locked_until.future?
+  end
+
+  def unlockable_by_email?
+    access_locked? && confirmed? && !anonymized?
   end
 
   def register_failed_login!

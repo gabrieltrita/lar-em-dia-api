@@ -1,4 +1,6 @@
 class Entry < ApplicationRecord
+  MAX_AMOUNT_CENTS = 10_000_000_000_000
+
   belongs_to :user
   belongs_to :category
   belongs_to :series, class_name: "EntrySeries", optional: true, inverse_of: :entries
@@ -13,7 +15,7 @@ class Entry < ApplicationRecord
   before_validation :default_nature_from_category
 
   validates :description, presence: true, length: { maximum: 200 }
-  validates :amount_cents, presence: true, numericality: { only_integer: true, greater_than: 0 }
+  validates :amount_cents, presence: true, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: MAX_AMOUNT_CENTS }
   validates :due_on, presence: true
   validates :paid_on, absence: { message: :only_when_paid }, unless: :paid?
   validates :nature, presence: true, if: :expense?

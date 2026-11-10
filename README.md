@@ -7,7 +7,7 @@ API (Rails 8.1, API-only) for **Lar em Dia**, a family budgeting and cash-flow p
 | Service | Purpose | Default URL |
 |---|---|---|
 | **api** | Rails 8.1 / Puma | http://localhost:3000 |
-| **sidekiq** | Background jobs and scheduled jobs (sidekiq-cron) | dashboard at http://localhost:3000/sidekiq |
+| **sidekiq** | Background jobs and scheduled jobs (sidekiq-cron) | dashboard at http://localhost:3000/sidekiq (in production only with `ENABLE_SIDEKIQ_WEB=true`) |
 | **db** | PostgreSQL 17 | localhost:5432 |
 | **redis** | Cache, Sidekiq queues, JWT denylist, rate limiting | localhost:6379 |
 | **mailhog** | Captures every email sent in development | http://localhost:8025 |
@@ -127,7 +127,7 @@ Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (re
 
 `Dockerfile` (multi-stage, non-root) is for production; `Dockerfile.dev` is used by docker-compose.
 
-The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `SECRET_KEY_BASE` (64+, `bin/rails secret`), `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login), `APPLE_CLIENT_IDS` (comma-separated Apple identifiers: the app's bundle id and the web Services ID; empty disables Apple login), `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` (the Sign in with Apple key: team id, key id and the contents of the `.p8` file with `\n` instead of line breaks; all three or none, used to revoke the Apple token when an account is deleted).
+The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `SECRET_KEY_BASE` (64+, `bin/rails secret`), `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `ENABLE_SIDEKIQ_WEB` (`true` mounts the Sidekiq dashboard at `/sidekiq` in production; off by default, turn it on only while you need it), `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login), `APPLE_CLIENT_IDS` (comma-separated Apple identifiers: the app's bundle id and the web Services ID; empty disables Apple login), `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` (the Sign in with Apple key: team id, key id and the contents of the `.p8` file with `\n` instead of line breaks; all three or none, used to revoke the Apple token when an account is deleted).
 
 Logs go to stdout as one JSON object per line. Each request is a single line (lograge) with `time`, `level`, `method`, `path`, `controller`, `action`, `status`, `duration`, `db`, `view`, `request_id`, `user_id` and, on errors, the exception class:
 
@@ -332,7 +332,7 @@ The new email only takes effect after the link sent to it (`FRONTEND_URL/confirm
 
 ### 8. Account lockout and rate limiting
 
-- 5 wrong passwords (or 2FA codes) lock the account for 15 minutes, doubling up to 24 hours. A locked account answers like a wrong password and the owner is emailed. Admins can unlock with `POST /admin/users/:id/unlock`.
+- 5 wrong passwords (or 2FA codes) lock the account for 15 minutes, doubling up to 24 hours. A locked account answers like a wrong password and the owner is emailed. The email carries a link to `/unlock?token=...` on the front end, which calls `POST /auth/unlock`: it unlocks the account and signs in (still asking for the 2FA code when enabled), so someone who only knows the email cannot keep the owner out. The link stops working once the account is unlocked or locked again. Admins can unlock with `POST /admin/users/:id/unlock`.
 - Rack::Attack limits login per IP and per email, 2FA attempts, refresh, sign-up, confirmation, password recovery and sensitive `/me` actions. Throttled requests get `429 rate_limited` with `Retry-After`.
 
 ### 9. Roles and authorization
@@ -383,7 +383,7 @@ DELETE /me { "current_password": "...", "code": "123456 if 2FA is on" }
 
 ### 13. Emails
 
-Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. Emails: confirmation, sign-up attempt, welcome, password reset, password changed, email change confirmation and notice, account locked, 2FA disabled. Links point to `FRONTEND_URL`, so lar-em-dia-app must implement `/login`, `/forgot-password`, `/reset-password`, `/confirm-email` and `/confirm-email-change`.
+Sent through Sidekiq (`mailers` queue); in development they show up in MailHog. Emails: confirmation, sign-up attempt, welcome, password reset, password changed, email change confirmation and notice, account locked, 2FA disabled. Links point to `FRONTEND_URL`, so lar-em-dia-app must implement `/login`, `/forgot-password`, `/reset-password`, `/confirm-email`, `/confirm-email-change` and `/unlock`.
 
 ### 14. Scheduled maintenance
 
