@@ -29,6 +29,15 @@ RSpec.describe "Balances", type: :request do
       expect(json.dig("error", "details", "amount_cents", 0, "code")).to eq("blank")
     end
 
+    it "rejects amounts beyond the cap in both directions" do
+      post "/api/v1/balances", params: valid_params.merge(amount_cents: -(10**20)), headers: headers, as: :json
+      expect(json.dig("error", "details", "amount_cents", 0, "code")).to eq("greater_than_or_equal_to")
+
+      post "/api/v1/balances", params: valid_params.merge(amount_cents: 10**20), headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json.dig("error", "details", "amount_cents", 0, "code")).to eq("less_than_or_equal_to")
+    end
+
     it "rejects a future date and a second balance on the same date" do
       post "/api/v1/balances", params: { amount_cents: 1, as_of: (Date.current + 1).iso8601 }, headers: headers, as: :json
       expect(json.dig("error", "details", "as_of", 0, "code")).to eq("in_future")

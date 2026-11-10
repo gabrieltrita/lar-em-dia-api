@@ -10,6 +10,7 @@ class Rack::Attack
     /api/v1/auth/confirm
     /api/v1/auth/confirm/resend
     /api/v1/auth/email/confirm
+    /api/v1/auth/unlock
   ].freeze
 
   REAUTH_PATHS = %w[
@@ -40,6 +41,10 @@ class Rack::Attack
 
   throttle("health/ip", limit: 60, period: 1.minute) do |req|
     req.ip if req.path == "/health"
+  end
+
+  throttle("sidekiq/ip", limit: 60, period: 1.minute) do |req|
+    req.ip if req.path.start_with?("/sidekiq")
   end
 
   throttle("auth/login/ip", limit: 10, period: 1.minute) do |req|

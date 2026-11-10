@@ -8,6 +8,11 @@ RSpec.describe EntrySeries do
   it { is_expected.to validate_inclusion_of(:direction).in_array(%w[forward backward]).on(:create) }
 
   it { is_expected.to validate_absence_of(:total_cents) }
+  it { is_expected.to validate_inclusion_of(:interval_months).in_array([ 1, 3, 6, 12 ]) }
+
+  it "repeats monthly by default" do
+    expect(series.interval_months).to eq(1)
+  end
 
   it "keeps a saved series with a single entry left" do
     series.save!
@@ -27,6 +32,12 @@ RSpec.describe EntrySeries do
       series.total_cents = 2
       expect(series).not_to be_valid
       expect(series.errors.details[:total_cents]).to eq([ { error: :greater_than_or_equal_to, value: 2, count: 3 } ])
+    end
+
+    it "caps the total at the largest amount an entry accepts" do
+      series.total_cents = Entry::MAX_AMOUNT_CENTS + 1
+      expect(series).not_to be_valid
+      expect(series.errors.details[:total_cents].pluck(:error)).to eq([ :less_than_or_equal_to ])
     end
 
     it "requires the total" do

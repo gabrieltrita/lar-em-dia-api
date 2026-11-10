@@ -58,6 +58,13 @@ RSpec.describe "Entries", type: :request do
       expect(details.dig("paid_on", 0, "code")).to eq("only_when_paid")
       expect(details.dig("category", 0, "code")).to eq("required")
     end
+
+    it "rejects an amount above the cap instead of failing in the database" do
+      post "/api/v1/entries", params: valid_params.merge(amount_cents: 10**20), headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json.dig("error", "details", "amount_cents", 0, "code")).to eq("less_than_or_equal_to")
+    end
   end
 
   describe "GET /api/v1/entries" do
@@ -182,6 +189,14 @@ RSpec.describe "Entries", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(recurring.entries.reload.map(&:due_on).map(&:iso8601)).to eq(%w[2026-01-30 2026-02-28 2026-03-30 2026-04-30])
+    end
+
+    it "moves the following entries of a series in fixed months by its interval" do
+      semiannual = create_series(entries_count: 3, amount_cents: 90_000, due_on: "2026-03-10", interval_months: 6)
+      patch "/api/v1/entries/#{entry_at(semiannual, 2).id}", params: { scope: "following", due_on: "2026-09-20" }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(semiannual.entries.reload.map(&:due_on).map(&:iso8601)).to eq(%w[2026-03-10 2026-09-20 2027-03-20])
     end
 
     it "rejects status and paid_on changes outside a single entry" do

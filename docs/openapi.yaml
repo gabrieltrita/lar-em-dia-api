@@ -36,6 +36,7 @@ info:
     | `invalid_email_change_token` | 401 | Bad or expired email change link |
     | `invalid_unsubscribe_token` | 401 | Bad or expired due-date alerts unsubscribe link |
     | `invalid_reset_token` | 401 | Bad or expired password reset link |
+    | `invalid_unlock_token` | 401 | Bad or expired unlock link, or the account is no longer locked |
     | `oauth_token_invalid` | 401 | Provider ID token is invalid, expired or for another client |
     | `oauth_email_unverified` | 401 | Provider says the email is not verified |
     | `email_not_confirmed` | 403 | Correct password but email not confirmed yet |
@@ -62,7 +63,8 @@ info:
     plus `weak_password`, `required`, `same_as_current`, `taken`, `greater_than`, `not_an_integer`, `in_future` (balance date),
     `only_when_paid` (entry `paid_on` while pending), `inactive` (category no longer offered), `only_for_expenses`
     (`nature` on an income entry, `kind` on an installments series of income) and `not_a_number`,
-    `greater_than_or_equal_to`, `less_than_or_equal_to` and `present` (series `entries_count` and `total_cents`), and
+    `greater_than_or_equal_to`, `less_than_or_equal_to` (series `entries_count` and `total_cents`, and amounts above
+    100,000,000,000.00 or a balance below its negative) and `present` (series `entries_count` and `total_cents`), and
     `immutable` (a category's `key` or `kind` after it is created).
 servers:
   - url: /api/v1
@@ -113,7 +115,7 @@ paths:
       summary: Log in with email and password
       description: |
         When the user has 2FA, the response carries `two_factor_required: true` and a `challenge_token`; finish with `POST /auth/two_factor`.
-        A locked account responds exactly like a wrong password (401). An unconfirmed email responds 403 `email_not_confirmed` (only with the right password).
+        A locked account responds exactly like a wrong password (401); the "account locked" email carries a link for `POST /auth/unlock`. An unconfirmed email responds 403 `email_not_confirmed` (only with the right password).
       security: []
       parameters:
         - $ref: "#/components/parameters/TokenTransport"
@@ -272,6 +274,32 @@ paths:
         "200": { $ref: "#/components/responses/Message" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
+  /auth/unlock:
+    post:
+      tags: [Auth]
+      summary: Unlock a locked account from the emailed link and sign in
+      description: |
+        The link is sent with the "account locked" email and works while the lock lasts. It responds like `POST /auth/login`:
+        a session, or `two_factor_required: true` with a `challenge_token` when the user has 2FA.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TokenTransport"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200":
+          description: Session created or 2FA pending
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/SessionResponse"
+                  - $ref: "#/components/schemas/TwoFactorChallengeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /auth/oauth/google:
     post:
       tags: [Auth]
@@ -1011,7 +1039,8 @@ paths:
       description: |
         With `scope` `following` or `all` on an entry of a series, `category_id`, `nature`, `description` and
         `amount_cents` are applied to this entry and the following ones (or to every entry of the series), and a new
-        `due_on` moves each of them by the same offset, keeping the month end adjustment of `POST /entry_series`. It is
+        `due_on` moves each of them by the same offset, keeping the series' `interval_months` and the month end
+        adjustment of `POST /entry_series`. It is
         all or nothing. `status` and `paid_on` only change with `one` (`only_for_single_entry` otherwise), and an
         installment's `amount_cents` too (`installment_amount_locked`); sending them unchanged is accepted. An entry
         outside a series ignores `scope`.
@@ -1052,15 +1081,17 @@ paths:
   /entry_series:
     post:
       tags: [Entries]
-      summary: Create a recurring or installments series of monthly entries
+      summary: Create a recurring or installments series of entries
       description: |
-        Creates `entries_count` entries (the first included) on the same day of consecutive months; a month without
-        that day uses its last day. Entries due up to today take the sent status (paid ones with `paid_on` on their due
+        Creates `entries_count` entries (the first included) on the same day of every month, or of every
+        `interval_months` months; a month without that day uses its last day. Entries due up to today take the sent status (paid ones with `paid_on` on their due
         date); later ones are pending. All or nothing: an invalid entry answers the same `details` as `POST /entries`.
 
-        - `recurring` (default): 2 to 36 entries of `amount_cents`, forwards or backwards from `due_on`.
-        - `installments`: expenses only, 2 to 48 entries, always forwards. `total_cents` is split into equal
-          installments and the leftover cents go to the first one; `amount_cents` and `direction` are ignored.
+        - `recurring` (default): 2 to 36 entries of `amount_cents`, forwards or backwards from `due_on`, monthly
+          (`interval_months` 1, the default), quarterly (3), semiannually (6) or yearly (12).
+        - `installments`: expenses only, 2 to 48 entries, always monthly and forwards. `total_cents` is split into
+          equal installments and the leftover cents go to the first one; `amount_cents`, `direction` and
+          `interval_months` are ignored.
       requestBody:
         required: true
         content:
@@ -1138,12 +1169,13 @@ paths:
                       category_id: { type: string, format: uuid }
                       nature: { type: [string, "null"], enum: [fixed, variable, null] }
                       description: { type: string, maxLength: 200 }
-                      amount_cents: { type: integer, minimum: 1, description: Not used for installments }
+                      amount_cents: { type: integer, minimum: 1, maximum: 10000000000000, description: Not used for installments }
                       due_on: { type: string, format: date }
                       entries_count: { type: integer, minimum: 2, maximum: 48, description: Simulates a series, as in `POST /entry_series` }
                       kind: { type: string, enum: [recurring, installments], default: recurring }
                       direction: { type: string, enum: [forward, backward] }
-                      total_cents: { type: integer, description: Installments only }
+                      interval_months: { type: integer, enum: [1, 3, 6, 12], default: 1, description: Recurring only }
+                      total_cents: { type: integer, maximum: 10000000000000, description: Installments only }
       responses:
         "200":
           description: Baseline and simulated projections
@@ -1425,7 +1457,7 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        amount_cents: { type: integer, description: May be negative }
+        amount_cents: { type: integer, minimum: -10000000000000, maximum: 10000000000000, description: May be negative }
         as_of: { type: string, format: date }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -1433,7 +1465,7 @@ components:
       type: object
       required: [amount_cents, as_of]
       properties:
-        amount_cents: { type: integer }
+        amount_cents: { type: integer, minimum: -10000000000000, maximum: 10000000000000 }
         as_of: { type: string, format: date, description: Today or a past date }
     Entry:
       type: object
@@ -1443,7 +1475,7 @@ components:
         nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expenses only }
         category_id: { type: string, format: uuid }
         description: { type: string, maxLength: 200 }
-        amount_cents: { type: integer, minimum: 1 }
+        amount_cents: { type: integer, minimum: 1, maximum: 10000000000000 }
         due_on: { type: string, format: date }
         status: { type: string, enum: [pending, paid] }
         paid_on: { type: [string, "null"], format: date }
@@ -1460,7 +1492,7 @@ components:
         category_id: { type: string, format: uuid }
         nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expenses only; defaults to the category's default_nature }
         description: { type: string, maxLength: 200 }
-        amount_cents: { type: integer, minimum: 1 }
+        amount_cents: { type: integer, minimum: 1, maximum: 10000000000000 }
         due_on: { type: string, format: date }
         status: { type: string, enum: [pending, paid], default: pending }
         paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
@@ -1472,19 +1504,21 @@ components:
         category_id: { type: string, format: uuid }
         nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expenses only; defaults to the category's default_nature }
         description: { type: string, maxLength: 200 }
-        amount_cents: { type: integer, minimum: 1, description: Recurring only; the amount of every entry }
-        total_cents: { type: integer, description: Installments only; at least one cent per installment }
+        amount_cents: { type: integer, minimum: 1, maximum: 10000000000000, description: Recurring only; the amount of every entry }
+        total_cents: { type: integer, maximum: 10000000000000, description: Installments only; at least one cent per installment }
         due_on: { type: string, format: date, description: Due date of the first entry sent }
         status: { type: string, enum: [pending, paid], default: pending }
         paid_on: { type: [string, "null"], format: date, description: Only when status is paid }
         entries_count: { type: integer, minimum: 2, maximum: 48, description: Number of entries, the first included; up to 36 for recurring }
         direction: { type: string, enum: [forward, backward], description: Recurring only; following or previous months }
+        interval_months: { type: integer, enum: [1, 3, 6, 12], default: 1, description: Recurring only; months between two entries }
     EntrySeries:
       type: object
-      required: [id, kind, entries_count, entries]
+      required: [id, kind, interval_months, entries_count, entries]
       properties:
         id: { type: string, format: uuid }
         kind: { type: string, enum: [recurring, installments] }
+        interval_months: { type: integer, enum: [1, 3, 6, 12], description: Months between two entries; always 1 for installments }
         entries_count: { type: integer }
         total_cents: { type: [integer, "null"], description: Installments only }
         created_at: { type: string, format: date-time }

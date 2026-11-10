@@ -9,7 +9,8 @@ module Api
           count: params[:entries_count],
           direction: params[:direction],
           kind: params[:kind],
-          total_cents: params[:total_cents]
+          total_cents: params[:total_cents],
+          interval_months: params[:interval_months]
         )
 
         if creator.call

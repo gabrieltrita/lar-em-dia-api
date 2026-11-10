@@ -43,6 +43,7 @@ env:
     SMTP_PORT: <%= ENV.fetch("SMTP_PORT", "587").to_json %>
     GOOGLE_CLIENT_IDS: <%= ENV.fetch("GOOGLE_CLIENT_IDS", "").to_json %>
     APPLE_CLIENT_IDS: <%= ENV.fetch("APPLE_CLIENT_IDS", "").to_json %>
+    ENABLE_SIDEKIQ_WEB: <%= ENV.fetch("ENABLE_SIDEKIQ_WEB", "false").to_json %>
   secret:
     - SECRET_KEY_BASE
     - JWT_SECRET

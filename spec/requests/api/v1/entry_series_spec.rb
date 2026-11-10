@@ -20,13 +20,21 @@ RSpec.describe "Entry series", type: :request do
       post "/api/v1/entry_series", params: valid_params.merge(status: "paid", paid_on: "2026-11-05"), headers: headers, as: :json
 
       expect(response).to have_http_status(:created)
-      expect(json["data"]).to include("kind" => "recurring", "entries_count" => 3)
+      expect(json["data"]).to include("kind" => "recurring", "interval_months" => 1, "entries_count" => 3)
       entries = json.dig("data", "entries")
       expect(entries.map { |entry| entry.values_at("due_on", "status", "series_position") }).to eq(
         [ [ "2026-11-05", "paid", 1 ], [ "2026-12-05", "pending", 2 ], [ "2027-01-05", "pending", 3 ] ]
       )
       expect(entries.pluck("series_id").uniq).to eq([ json.dig("data", "id") ])
       expect(user.entries.count).to eq(3)
+    end
+
+    it "repeats in fixed months of the following years" do
+      post "/api/v1/entry_series", params: valid_params.merge(description: "FGTS", due_on: "2027-05-10", interval_months: 12), headers: headers, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(json["data"]).to include("interval_months" => 12)
+      expect(json.dig("data", "entries").pluck("due_on")).to eq(%w[2027-05-10 2028-05-10 2029-05-10])
     end
 
     it "shows the series on each entry" do
@@ -39,12 +47,13 @@ RSpec.describe "Entry series", type: :request do
     end
 
     it "returns per-field errors and creates nothing" do
-      post "/api/v1/entry_series", params: valid_params.merge(entries_count: 1, direction: "up", description: ""), headers: headers, as: :json
+      post "/api/v1/entry_series", params: valid_params.merge(entries_count: 1, direction: "up", interval_months: 4, description: ""), headers: headers, as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
       details = json.dig("error", "details")
       expect(details.dig("entries_count", 0, "code")).to eq("greater_than_or_equal_to")
       expect(details.dig("direction", 0, "code")).to eq("inclusion")
+      expect(details.dig("interval_months", 0, "code")).to eq("inclusion")
       expect(details.dig("description", 0, "code")).to eq("blank")
       expect(Entry.count).to eq(0)
     end
