@@ -2,8 +2,10 @@ module Api
   module V1
     class BalancesController < ApplicationController
       include Paginatable
+      include ProjectionMeta
 
       before_action :set_balance, only: %i[show update destroy]
+      before_action :require_projection_meta_period, only: %i[create update destroy]
 
       def index
         authorize Balance
@@ -20,7 +22,7 @@ module Api
         authorize balance
 
         if balance.save
-          render json: { data: BalanceBlueprint.render_as_hash(balance) }, status: :created
+          render json: { data: BalanceBlueprint.render_as_hash(balance), meta: projection_meta }.compact_blank, status: :created
         else
           render_validation_errors(balance)
         end
@@ -28,7 +30,7 @@ module Api
 
       def update
         if @balance.update(balance_params)
-          render json: { data: BalanceBlueprint.render_as_hash(@balance) }
+          render json: { data: BalanceBlueprint.render_as_hash(@balance), meta: projection_meta }.compact_blank
         else
           render_validation_errors(@balance)
         end
@@ -36,7 +38,7 @@ module Api
 
       def destroy
         @balance.destroy!
-        head :no_content
+        render json: { data: { deleted_ids: [ @balance.id ] }, meta: projection_meta }.compact_blank
       end
 
       private

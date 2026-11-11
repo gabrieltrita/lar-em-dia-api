@@ -26,23 +26,26 @@ RSpec.describe "GitHub workflows" do
     expect(jobs.values_at("staging", "production").map { |job| job["needs"] }).to all(eq("ci"))
   end
 
-  it "deploys staging from main and production only from a version tag on main" do
+  it "deploys on its own only to production, from a version tag on main" do
     on = deploy.fetch("on", deploy[true])
-    expect(on["push"]["branches"]).to eq([ "main" ])
+    expect(on["push"].keys).to eq([ "tags" ])
     expect(on["push"]["tags"]).to eq([ "[0-9]+.[0-9]+.[0-9]+" ])
-    expect(jobs["staging"]["if"]).to include("github.ref_type == 'branch'")
-    expect(jobs["production"]["if"]).to include("github.ref_type == 'tag'")
+    expect(jobs["staging"]["if"]).not_to include("github.event_name == 'push'")
+    expect(jobs["production"]["if"]).to include("github.event_name == 'push' && github.ref_type == 'tag'")
     expect(jobs["production"]["steps"].map { |step| step["run"] }).to include('git merge-base --is-ancestor "$GITHUB_SHA" origin/main')
   end
 
-  it "sets an environment up only by hand, from main, and only the chosen one" do
+  it "deploys staging only by hand, from main, and runs production by hand only to set it up" do
     dispatch = deploy.fetch("on", deploy[true]).fetch("workflow_dispatch")
 
     expect(dispatch.dig("inputs", "environment")).to include("type" => "choice", "options" => %w[staging production])
-    { "staging" => "staging", "production" => "production" }.each do |job, environment|
-      expect(jobs[job]["if"]).to include("github.event_name == 'push'", "github.ref == 'refs/heads/main'", "inputs.environment == '#{environment}'")
-      expect(jobs[job]["steps"].last["with"]["setup"]).to eq("${{ github.event_name == 'workflow_dispatch' }}")
+    expect(dispatch.dig("inputs", "setup")).to include("type" => "boolean", "default" => false)
+    %w[staging production].each do |environment|
+      expect(jobs[environment]["if"]).to include("github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.environment == '#{environment}'")
+      expect(jobs[environment]["steps"].last["with"]["setup"]).to eq("${{ inputs.setup == true }}")
     end
+    expect(jobs["staging"]["if"]).not_to include("inputs.setup")
+    expect(jobs["production"]["if"]).to include("inputs.environment == 'production' && inputs.setup)")
   end
 
   it "prepares the server and runs kamal setup only when asked, and deploys otherwise" do

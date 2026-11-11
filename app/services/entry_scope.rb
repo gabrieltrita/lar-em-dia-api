@@ -26,12 +26,14 @@ class EntryScope
 
   def destroy
     series = @entry.series
+    deleted_ids = single? ? [ @entry.id ] : entries.ids
     Entry.transaction do
       next series.destroy! if @scope == "all"
 
       @scope == "following" ? entries.destroy_all : @entry.destroy!
       refresh(series) if series
     end
+    deleted_ids
   end
 
   private

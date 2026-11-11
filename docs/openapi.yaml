@@ -21,8 +21,8 @@ info:
     | `validation_failed` | 422 | Invalid payload, see `details` |
     | `bad_request` | 400 | Missing parameter or malformed JSON |
     | `invalid_date` | 400 | A date query parameter is not `YYYY-MM-DD` |
-    | `invalid_month` | 400 | A month query parameter is not `YYYY-MM` |
-    | `invalid_months` | 400 | `months` is not an integer from 1 to 24 or `all` |
+    | `invalid_month` | 400 | A month query parameter (such as `from` or `projection_from`) is not `YYYY-MM` |
+    | `invalid_months` | 400 | `months` (or `projection_months`) is not an integer from 1 to 60 or `all` |
     | `missing_token` | 401 | No `Authorization` header, or no refresh cookie on `POST /auth/refresh` in cookie mode |
     | `invalid_token` | 401 | Invalid, expired or wrong-type token |
     | `token_revoked` | 401 | Access token revoked by logout |
@@ -947,6 +947,9 @@ paths:
     post:
       tags: [Balances]
       summary: Create a balance
+      parameters:
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       requestBody:
         required: true
         content:
@@ -954,6 +957,7 @@ paths:
             schema: { $ref: "#/components/schemas/BalanceInput" }
       responses:
         "201": { $ref: "#/components/responses/Balance" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
   /balances/{id}:
     parameters:
@@ -968,6 +972,9 @@ paths:
     patch:
       tags: [Balances]
       summary: Update a balance
+      parameters:
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       requestBody:
         required: true
         content:
@@ -975,18 +982,26 @@ paths:
             schema: { $ref: "#/components/schemas/BalanceInput" }
       responses:
         "200": { $ref: "#/components/responses/Balance" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
     put:
       tags: [Balances]
       summary: Same as PATCH
+      parameters:
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       responses:
         "200": { $ref: "#/components/responses/Balance" }
     delete:
       tags: [Balances]
       summary: Delete a balance
+      parameters:
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       responses:
-        "204": { description: Deleted }
+        "200": { $ref: "#/components/responses/Deleted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
   /entries:
     get:
@@ -998,7 +1013,7 @@ paths:
         - { name: kind, in: query, schema: { type: string, enum: [income, expense] } }
         - { name: nature, in: query, schema: { type: string, enum: [fixed, variable] } }
         - { name: page, in: query, schema: { type: integer } }
-        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+        - { name: limit, in: query, description: Up to 500 entries per page, schema: { type: integer, maximum: 500 } }
       responses:
         "200":
           description: Page of entries
@@ -1015,6 +1030,9 @@ paths:
     post:
       tags: [Entries]
       summary: Create an entry
+      parameters:
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       requestBody:
         required: true
         content:
@@ -1022,6 +1040,7 @@ paths:
             schema: { $ref: "#/components/schemas/EntryInput" }
       responses:
         "201": { $ref: "#/components/responses/Entry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
   /entries/{id}:
     parameters:
@@ -1043,9 +1062,12 @@ paths:
         adjustment of `POST /entry_series`. It is
         all or nothing. `status` and `paid_on` only change with `one` (`only_for_single_entry` otherwise), and an
         installment's `amount_cents` too (`installment_amount_locked`); sending them unchanged is accepted. An entry
-        outside a series ignores `scope`.
+        outside a series ignores `scope`. For an entry of a series, `meta.entries` lists every entry left in the
+        series after the change, so clients can refresh them without another request.
       parameters:
         - $ref: "#/components/parameters/EntryScope"
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       requestBody:
         required: true
         content:
@@ -1053,6 +1075,7 @@ paths:
             schema: { $ref: "#/components/schemas/EntryInput" }
       responses:
         "200": { $ref: "#/components/responses/Entry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422":
           description: Invalid data (`validation_failed`), or a field that only changes with scope `one` (`only_for_single_entry`, `installment_amount_locked`)
@@ -1064,6 +1087,8 @@ paths:
       summary: Same as PATCH
       parameters:
         - $ref: "#/components/parameters/EntryScope"
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       responses:
         "200": { $ref: "#/components/responses/Entry" }
     delete:
@@ -1072,11 +1097,15 @@ paths:
       description: |
         `scope` `following` deletes this entry and the following ones of its series and updates the series'
         `entries_count` (and `total_cents` for installments); `all` deletes the whole series. A series left without
-        entries is deleted too.
+        entries is deleted too. `data.deleted_ids` lists the deleted entries and, for an entry of a series,
+        `meta.entries` lists the ones left in it.
       parameters:
         - $ref: "#/components/parameters/EntryScope"
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       responses:
-        "204": { description: Deleted }
+        "200": { $ref: "#/components/responses/Deleted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
   /entry_series:
     post:
@@ -1092,6 +1121,9 @@ paths:
         - `installments`: expenses only, 2 to 48 entries, always monthly and forwards. `total_cents` is split into
           equal installments and the leftover cents go to the first one; `amount_cents`, `direction` and
           `interval_months` are ignored.
+      parameters:
+        - $ref: "#/components/parameters/ProjectionFrom"
+        - $ref: "#/components/parameters/ProjectionMonths"
       requestBody:
         required: true
         content:
@@ -1106,6 +1138,8 @@ paths:
                 type: object
                 properties:
                   data: { $ref: "#/components/schemas/EntrySeries" }
+                  meta: { $ref: "#/components/schemas/ChangeMeta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
   /projection:
@@ -1123,7 +1157,7 @@ paths:
           description: Number of months, or `all` to project through the month of the user's last entry (at least 1 and at most 60 months)
           schema:
             oneOf:
-              - { type: integer, minimum: 1, maximum: 24, default: 12 }
+              - { type: integer, minimum: 1, maximum: 60, default: 12 }
               - { type: string, enum: [all] }
       responses:
         "200":
@@ -1156,7 +1190,7 @@ paths:
                 months:
                   description: Number of months, or `all` to project through the month of the last entry, simulated ones included (at most 60)
                   oneOf:
-                    - { type: integer, minimum: 1, maximum: 24, default: 12 }
+                    - { type: integer, minimum: 1, maximum: 60, default: 12 }
                     - { type: string, enum: [all] }
                 entries:
                   type: array
@@ -1288,6 +1322,24 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    ProjectionFrom:
+      name: projection_from
+      in: query
+      required: false
+      description: |
+        First month of the projection to send back in `meta.projection`, recalculated after the change, in the
+        `GET /projection` format. With `projection_from` or `projection_months` the answer carries it; without both,
+        it does not. A blank value means the current month, as `from` in `GET /projection`.
+      schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-05" }
+    ProjectionMonths:
+      name: projection_months
+      in: query
+      required: false
+      description: Number of months for `meta.projection`, as `months` in `GET /projection`
+      schema:
+        oneOf:
+          - { type: integer, minimum: 1, maximum: 60, default: 12 }
+          - { type: string, enum: [all] }
     EntryScope:
       name: scope
       in: query
@@ -1536,6 +1588,14 @@ components:
       properties:
         due_alerts_enabled: { type: boolean }
         due_alert_days_before: { type: integer, minimum: 0, maximum: 7, description: "Outside 0 to 7 answers `inclusion`" }
+    ChangeMeta:
+      type: object
+      properties:
+        projection: { $ref: "#/components/schemas/Projection" }
+        entries:
+          type: array
+          description: Every entry left in the changed entry's series
+          items: { $ref: "#/components/schemas/Entry" }
     Projection:
       type: object
       required: [anchor, months, alerts, last_entry_month]
@@ -1662,6 +1722,7 @@ components:
             type: object
             properties:
               data: { $ref: "#/components/schemas/Entry" }
+              meta: { $ref: "#/components/schemas/ChangeMeta" }
     Balance:
       description: Balance
       content:
@@ -1670,6 +1731,7 @@ components:
             type: object
             properties:
               data: { $ref: "#/components/schemas/Balance" }
+              meta: { $ref: "#/components/schemas/ChangeMeta" }
     Session:
       description: Session created
       content:
@@ -1697,8 +1759,22 @@ components:
                 type: object
                 properties:
                   backup_codes: { type: array, items: { type: string } }
+    Deleted:
+      description: Deleted
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                type: object
+                required: [deleted_ids]
+                properties:
+                  deleted_ids: { type: array, items: { type: string, format: uuid } }
+              meta: { $ref: "#/components/schemas/ChangeMeta" }
     BadRequest:
-      description: Missing parameter or invalid JSON
+      description: Missing parameter, invalid JSON or an invalid projection period (`invalid_month`, `invalid_months`)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

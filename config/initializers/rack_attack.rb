@@ -35,7 +35,7 @@ class Rack::Attack
     (json_param(req, "email") || req.params["email"]).to_s.downcase.strip.presence
   end
 
-  throttle("req/ip", limit: 300, period: 5.minutes) do |req|
+  throttle("req/ip", limit: 120, period: 1.minute) do |req|
     req.ip unless %w[/up /health].include?(req.path)
   end
 
@@ -93,8 +93,13 @@ class Rack::Attack
     req.ip if req.post? && req.path == "/api/v1/projection/simulation"
   end
 
-  self.throttled_responder = lambda do |_req|
+  def self.retry_after(req)
+    match = req.env["rack.attack.match_data"]
+    match[:period] - (match[:epoch_time] % match[:period])
+  end
+
+  self.throttled_responder = lambda do |req|
     body = { error: { code: "rate_limited", message: "Too many requests. Please try again shortly." } }
-    [ 429, { "Content-Type" => "application/json", "Retry-After" => "60" }, [ body.to_json ] ]
+    [ 429, { "Content-Type" => "application/json", "Retry-After" => retry_after(req).to_s }, [ body.to_json ] ]
   end
 end
