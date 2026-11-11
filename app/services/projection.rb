@@ -1,5 +1,5 @@
 class Projection
-  MONTHS_RANGE = (1..24)
+  MONTHS_RANGE = (1..60)
   DEFAULT_MONTHS = 12
   ALL_MONTHS = :all
   ALL_MONTHS_LIMIT = 60

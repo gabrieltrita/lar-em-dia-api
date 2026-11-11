@@ -99,4 +99,26 @@ RSpec.describe "Entry series", type: :request do
       end
     end
   end
+
+  describe "projection in the answer" do
+    it "answers the projection with the whole series" do
+      post "/api/v1/entry_series?projection_from=2026-11&projection_months=all", params: valid_params, headers: headers, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(json.dig("meta", "projection", "months").map { |month| month["income_cents"] }).to eq([ 650_000 ] * 3)
+    end
+
+    it "rejects an invalid period before creating anything" do
+      expect {
+        post "/api/v1/entry_series?projection_from=2026-1", params: valid_params, headers: headers, as: :json
+      }.not_to change(Entry, :count)
+      expect(response).to have_http_status(:bad_request)
+      expect(json.dig("error", "code")).to eq("invalid_month")
+    end
+  end
+
+  it "answers without meta when no projection is asked" do
+    post "/api/v1/entry_series", params: valid_params, headers: headers, as: :json
+    expect(json).not_to have_key("meta")
+  end
 end

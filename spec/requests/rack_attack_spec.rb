@@ -105,4 +105,18 @@ RSpec.describe "Rate limiting (Rack::Attack)", type: :request do
     post "/api/v1/auth/login", params: { email: user.email, password: "Senha@123" }, as: :json
     expect(response).to have_http_status(:ok)
   end
+
+  it "limits every IP to 120 requests per minute and answers the seconds left in the window" do
+    120.times { get "/not-a-route", env: { "REMOTE_ADDR" => "10.8.8.8" } }
+    expect(response).to have_http_status(:not_found)
+
+    travel 20.seconds
+    get "/not-a-route", env: { "REMOTE_ADDR" => "10.8.8.8" }
+    expect(response).to have_http_status(:too_many_requests)
+    expect(response.headers["Retry-After"]).to eq("40")
+
+    travel 40.seconds
+    get "/not-a-route", env: { "REMOTE_ADDR" => "10.8.8.8" }
+    expect(response).to have_http_status(:not_found)
+  end
 end

@@ -2,6 +2,9 @@ module Api
   module V1
     class EntriesController < ApplicationController
       include Paginatable
+      include ProjectionMeta
+
+      INDEX_MAX_LIMIT = 500
 
       SCOPE_ERRORS = {
         "only_for_single_entry" => "status and paid_on can only change on a single entry (scope one)",
@@ -9,10 +12,11 @@ module Api
       }.freeze
 
       before_action :set_entry, only: %i[show update destroy]
+      before_action :require_projection_meta_period, only: %i[create update destroy]
 
       def index
         authorize Entry
-        pagy, entries = pagy(filtered_entries.includes(:series).chronological)
+        pagy, entries = pagy(filtered_entries.includes(:series).chronological, client_limit: INDEX_MAX_LIMIT)
         render json: { data: EntryBlueprint.render_as_hash(entries), meta: pagination_meta(pagy) }
       rescue Date::Error
         render_error(status: :bad_request, code: "invalid_date", message: "from and to must be dates (YYYY-MM-DD)")
@@ -27,7 +31,7 @@ module Api
         authorize entry
 
         if entry.save
-          render json: { data: EntryBlueprint.render_as_hash(entry) }, status: :created
+          render json: { data: EntryBlueprint.render_as_hash(entry), meta: projection_meta }.compact_blank, status: :created
         else
           render_validation_errors(entry)
         end
@@ -36,7 +40,7 @@ module Api
       def update
         change = EntryScope.new(@entry, params[:scope])
         if change.update(entry_params)
-          render json: { data: EntryBlueprint.render_as_hash(@entry.reload) }
+          render json: { data: EntryBlueprint.render_as_hash(@entry.reload), meta: change_meta }.compact_blank
         elsif change.error_code
           render_error(status: :unprocessable_content, code: change.error_code, message: SCOPE_ERRORS.fetch(change.error_code))
         else
@@ -45,8 +49,8 @@ module Api
       end
 
       def destroy
-        EntryScope.new(@entry, params[:scope]).destroy
-        head :no_content
+        deleted_ids = EntryScope.new(@entry, params[:scope]).destroy
+        render json: { data: { deleted_ids: deleted_ids }, meta: change_meta }.compact_blank
       end
 
       private
@@ -63,6 +67,16 @@ module Api
         entries = entries.where(due_on: date_param(:from)..) if params[:from].present?
         entries = entries.where(due_on: ..date_param(:to)) if params[:to].present?
         entries
+      end
+
+      def change_meta
+        series_meta.merge(projection_meta)
+      end
+
+      def series_meta
+        return {} unless @entry.series_id
+
+        { entries: EntryBlueprint.render_as_hash(policy_scope(Entry).where(series_id: @entry.series_id).includes(:series).chronological) }
       end
 
       def date_param(name)
