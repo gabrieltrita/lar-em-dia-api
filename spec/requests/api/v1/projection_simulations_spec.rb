@@ -136,7 +136,7 @@ RSpec.describe "Projection simulation", type: :request do
     expect(response).to have_http_status(:bad_request)
     expect(json.dig("error", "code")).to eq("invalid_month")
 
-    simulate([], months: 30)
+    simulate([], months: 61)
     expect(json.dig("error", "code")).to eq("invalid_months")
   end
 end

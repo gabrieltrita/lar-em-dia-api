@@ -83,12 +83,19 @@ RSpec.describe "Projection", type: :request do
     end
   end
 
-  it "rejects a number of months outside 1 to 24" do
-    %w[0 25 twelve 1.5 ALL].each do |months|
+  it "rejects a number of months outside 1 to 60" do
+    %w[0 61 twelve 1.5 ALL].each do |months|
       get "/api/v1/projection", params: { months: months }, headers: headers
 
       expect(response).to have_http_status(:bad_request)
       expect(json.dig("error", "code")).to eq("invalid_months")
     end
+  end
+
+  it "projects up to 60 months" do
+    get "/api/v1/projection", params: { months: 60 }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(json.dig("data", "months").size).to eq(60)
   end
 end

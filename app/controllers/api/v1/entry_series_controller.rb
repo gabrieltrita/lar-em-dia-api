@@ -1,6 +1,10 @@
 module Api
   module V1
     class EntrySeriesController < ApplicationController
+      include ProjectionMeta
+
+      before_action :require_projection_meta_period
+
       def create
         authorize EntrySeries
         creator = EntrySeriesCreator.new(
@@ -14,7 +18,7 @@ module Api
         )
 
         if creator.call
-          render json: { data: EntrySeriesBlueprint.render_as_hash(creator.series) }, status: :created
+          render json: { data: EntrySeriesBlueprint.render_as_hash(creator.series), meta: projection_meta }.compact_blank, status: :created
         else
           render_validation_errors(creator.series)
         end

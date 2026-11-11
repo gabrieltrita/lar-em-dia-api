@@ -89,9 +89,10 @@ RSpec.describe "Balances", type: :request do
       expect(response).to have_http_status(:unprocessable_content)
     end
 
-    it "deletes the owner's balance" do
+    it "deletes the owner's balance and answers its id" do
       delete "/api/v1/balances/#{balance.id}", headers: headers
-      expect(response).to have_http_status(:no_content)
+      expect(response).to have_http_status(:ok)
+      expect(json).to eq("data" => { "deleted_ids" => [ balance.id ] })
       expect(Balance.exists?(balance.id)).to be(false)
     end
   end
@@ -108,5 +109,45 @@ RSpec.describe "Balances", type: :request do
 
     get "/api/v1/balances/#{others.id}", headers: auth_headers(create(:user, :admin))
     expect(response).to have_http_status(:not_found)
+  end
+
+  describe "projection in the answer" do
+    let(:balance) { create(:balance, user: user, amount_cents: 10_000, as_of: Date.current.prev_month.end_of_month) }
+    let(:projection) { { projection_from: Date.current.strftime("%Y-%m"), projection_months: 1 } }
+
+    def closing
+      json.dig("meta", "projection", "months", 0, "closing_cents")
+    end
+
+    it "answers the projection recalculated after creating, updating and deleting" do
+      post "/api/v1/balances?#{projection.to_query}", params: valid_params, headers: headers, as: :json
+      expect(response).to have_http_status(:created)
+      expect(closing).to eq(-12_345)
+
+      patch "/api/v1/balances/#{json.dig("data", "id")}?#{projection.to_query}", params: { amount_cents: 500 }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(closing).to eq(500)
+
+      balance
+      delete "/api/v1/balances/#{json.dig("data", "id")}", params: projection, headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(closing).to eq(10_000)
+    end
+
+    it "rejects an invalid period before saving anything" do
+      expect {
+        post "/api/v1/balances?projection_months=0", params: valid_params, headers: headers, as: :json
+      }.not_to change(Balance, :count)
+      expect(response).to have_http_status(:bad_request)
+      expect(json["error"]).to include("code" => "invalid_months", "message" => "projection_months must be an integer from 1 to 60 or all")
+
+      patch "/api/v1/balances/#{balance.id}?projection_from=May", params: { amount_cents: 1 }, headers: headers, as: :json
+      expect(response).to have_http_status(:bad_request)
+      expect(balance.reload.amount_cents).to eq(10_000)
+
+      delete "/api/v1/balances/#{balance.id}", params: { projection_from: "2026-00" }, headers: headers
+      expect(response).to have_http_status(:bad_request)
+      expect(Balance.exists?(balance.id)).to be(true)
+    end
   end
 end

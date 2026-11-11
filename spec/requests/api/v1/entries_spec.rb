@@ -134,9 +134,11 @@ RSpec.describe "Entries", type: :request do
       expect(response).to have_http_status(:unprocessable_content)
     end
 
-    it "deletes the owner's entry" do
+    it "deletes the owner's entry and answers its id" do
       delete "/api/v1/entries/#{entry.id}", headers: headers
-      expect(response).to have_http_status(:no_content)
+      expect(response).to have_http_status(:ok)
+      expect(json["data"]).to eq("deleted_ids" => [ entry.id ])
+      expect(json).not_to have_key("meta")
       expect(Entry.exists?(entry.id)).to be(false)
     end
   end
@@ -182,6 +184,7 @@ RSpec.describe "Entries", type: :request do
       expect(entries.map(&:description)).to eq([ "Rent", "New rent", "New rent", "New rent" ])
       expect(entries.map(&:amount_cents)).to eq([ 200_000, 210_000, 210_000, 210_000 ])
       expect(entries.map(&:due_on).map(&:iso8601)).to eq(%w[2026-01-31 2026-02-15 2026-03-15 2026-04-15])
+      expect(json.dig("meta", "entries").map { |item| item["due_on"] }).to eq(%w[2026-01-31 2026-02-15 2026-03-15 2026-04-15])
     end
 
     it "edits every entry, keeping the month end adjustment" do
@@ -234,16 +237,22 @@ RSpec.describe "Entries", type: :request do
       expect(response).to have_http_status(:ok)
       expect(recurring.entries.reload.map(&:status)).to eq(%w[paid pending pending pending])
 
+      expect(json.dig("meta", "entries").size).to eq(4)
+
       single = create(:entry, user: user, category: salary)
       patch "/api/v1/entries/#{single.id}", params: { scope: "all", status: "paid", paid_on: single.due_on.iso8601 }, headers: headers, as: :json
       expect(response).to have_http_status(:ok)
+      expect(json).not_to have_key("meta")
       expect(single.reload).to be_paid
     end
 
     it "deletes this and the following entries and recounts the series" do
+      following = installments.entries.where(series_position: 2..).ids
       delete "/api/v1/entries/#{entry_at(installments, 2).id}", params: { scope: "following" }, headers: headers
 
-      expect(response).to have_http_status(:no_content)
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "deleted_ids")).to match_array(following)
+      expect(json.dig("meta", "entries").map { |item| [ item["series_position"], item["series_count"] ] }).to eq([ [ 1, 1 ] ])
       expect(installments.reload.entries_count).to eq(1)
       expect(installments.total_cents).to eq(installments.entries.sum(:amount_cents))
 
@@ -252,20 +261,86 @@ RSpec.describe "Entries", type: :request do
     end
 
     it "deletes the whole series" do
+      ids = recurring.entries.ids
       delete "/api/v1/entries/#{entry_at(recurring, 2).id}", params: { scope: "all" }, headers: headers
 
-      expect(response).to have_http_status(:no_content)
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "deleted_ids")).to match_array(ids)
+      expect(json.dig("meta", "entries")).to eq([])
       expect(EntrySeries.exists?(recurring.id)).to be(false)
       expect(Entry.where(series_id: recurring.id)).to be_empty
     end
 
     it "deletes one entry and drops the series once it is empty" do
-      delete "/api/v1/entries/#{entry_at(installments, 1).id}", headers: headers
+      first = entry_at(installments, 1)
+      delete "/api/v1/entries/#{first.id}", headers: headers
+      expect(json.dig("data", "deleted_ids")).to eq([ first.id ])
+      expect(json.dig("meta", "entries").size).to eq(2)
       expect(installments.reload.entries_count).to eq(3)
 
       delete "/api/v1/entries/#{entry_at(installments, 2).id}", params: { scope: "following" }, headers: headers
-      expect(response).to have_http_status(:no_content)
+      expect(response).to have_http_status(:ok)
       expect(EntrySeries.exists?(installments.id)).to be(false)
     end
+  end
+
+  describe "projection in the answer" do
+    let(:entry) { create(:entry, user: user, category: salary, amount_cents: 10_000, due_on: "2026-11-05") }
+    let(:projection) { { projection_from: "2026-11", projection_months: 2 } }
+
+    before { create(:balance, user: user, amount_cents: 50_000, as_of: "2026-10-31") }
+
+    def closings
+      json.dig("meta", "projection", "months").map { |month| month["closing_cents"] }
+    end
+
+    it "answers the projection recalculated after creating, updating and deleting" do
+      post "/api/v1/entries?#{projection.to_query}", params: valid_params.merge(due_on: "2026-12-05"), headers: headers, as: :json
+      expect(response).to have_http_status(:created)
+      expect(json.dig("meta", "projection", "months").map { |month| month["month"] }).to eq(%w[2026-11 2026-12])
+      expect(closings).to eq([ 50_000, 700_000 ])
+
+      patch "/api/v1/entries/#{entry.id}?#{projection.to_query}", params: { amount_cents: 20_000 }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(closings).to eq([ 70_000, 720_000 ])
+
+      delete "/api/v1/entries/#{entry.id}", params: projection, headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(closings).to eq([ 50_000, 700_000 ])
+    end
+
+    it "defaults to the current month and 12 months when only one parameter is sent" do
+      travel_to Date.new(2026, 11, 20) do
+        post "/api/v1/entries?projection_from=", params: valid_params, headers: headers, as: :json
+      end
+
+      expect(json.dig("meta", "projection", "months").size).to eq(12)
+      expect(json.dig("meta", "projection", "months", 0, "month")).to eq("2026-11")
+    end
+
+    it "rejects an invalid period before saving anything" do
+      expect {
+        post "/api/v1/entries?projection_from=2026-13", params: valid_params, headers: headers, as: :json
+      }.not_to change(Entry, :count)
+      expect(response).to have_http_status(:bad_request)
+      expect(json["error"]).to include("code" => "invalid_month", "message" => "projection_from must be a month (YYYY-MM)")
+
+      patch "/api/v1/entries/#{entry.id}?projection_months=61", params: { amount_cents: 1 }, headers: headers, as: :json
+      expect(response).to have_http_status(:bad_request)
+      expect(json.dig("error", "code")).to eq("invalid_months")
+      expect(entry.reload.amount_cents).to eq(10_000)
+
+      delete "/api/v1/entries/#{entry.id}", params: { projection_months: "x" }, headers: headers
+      expect(response).to have_http_status(:bad_request)
+      expect(Entry.exists?(entry.id)).to be(true)
+    end
+  end
+
+  it "lists up to 500 entries in one page" do
+    get "/api/v1/entries", params: { limit: 500 }, headers: headers
+    expect(json.dig("meta", "per_page")).to eq(500)
+
+    get "/api/v1/entries", params: { limit: 501 }, headers: headers
+    expect(json.dig("meta", "per_page")).to eq(500)
   end
 end
