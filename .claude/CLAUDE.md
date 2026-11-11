@@ -64,7 +64,7 @@ config/deploy.yml          Kamal deploy (web, job, Postgres, Redis and backup ac
 config/db_backup.sh        daily pg_dump run by the backup accessory (14 days kept in ~/<service>-backup/backups)
 .kamal/secrets             references to environment variables for Kamal, never values
 config/deploy.staging.yml  staging destination (bin/kamal ... -d staging); .kamal/secrets.staging reads the same secrets from STAGING_ variables
-.github/workflows/deploy.yml   CD: staging from main, production from a version tag on main, and a manual run on main that prepares the server and runs kamal setup; .github/actions/kamal-deploy builds (QEMU for arm64), deploys and checks /health
+.github/workflows/deploy.yml   CD: production only from a version tag on main; staging only by hand on main; a manual run with `setup` prepares the server and runs kamal setup (the only manual run allowed for production); .github/actions/kamal-deploy builds (QEMU for arm64), deploys and checks /health
 lib/json_log_formatter.rb  one JSON object per log line (JsonLogFormatter), used when config.x.json_logs is on
 lib/sentry_config.rb       Sentry privacy policy (SentryConfig.apply / .scrub)
 lib/app_renamer.rb         AppRenamer, used by bin/rename to rename a fork
