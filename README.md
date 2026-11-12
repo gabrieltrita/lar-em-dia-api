@@ -93,7 +93,7 @@ app/
     api/v1/me/       sessions, two_factor, consents, identities
     api/v1/admin/    users, audit_logs
     api/v1/          categories, balances, entries (Lar em Dia)
-  jobs/              MaintenanceCleanupJob, DueAlertsJob
+  jobs/              MaintenanceCleanupJob, DueAlertsJob, MarketDataSyncJob
   mailers/           UserMailer
   models/            User, RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry
   policies/          Pundit
@@ -505,3 +505,15 @@ POST  /me/notification_settings/unsubscribe { "token": "..." }   (no login)
 - `DueAlertsJob` runs every hour (`config/schedule.yml`). It picks the time zones where it is 8h now (`users.time_zone`), and for each confirmed, active user there with alerts on it looks for pending expenses due `due_alert_days_before` days ahead (0 to 7, `inclusion` otherwise; 0 is the same day). When there are some, it sets `users.due_alerts_sent_on` to the user's local date (so a user gets at most one alert a day) and enqueues `DueAlertMailer.upcoming(user)`. The job receives no arguments in production and the mailer only the user: it reads the entries itself.
 - The email lists each bill's description and amount, links to `FRONTEND_URL/expenses` and carries an unsubscribe link, `FRONTEND_URL/unsubscribe?token=...`, valid for 60 days. The front end posts that token to `/me/notification_settings/unsubscribe`, which turns the alerts off without a login (`invalid_unsubscribe_token`, 401, for a bad or expired link). The link goes through the front end so that mail scanners following links do not unsubscribe anyone.
 - Every change is audited as `user.notification_settings_changed` with the changed fields and `via` (`settings` or `unsubscribe_link`). The unsubscribe endpoint is throttled at 10 per minute per IP (`notification_settings/unsubscribe/ip`).
+
+### 21. Investments catalog (Lar em Dia)
+
+```http
+GET /assets?asset_type=fii&sector=Logística&q=hglg&page=1&limit=20
+GET /assets/PETR4   -> ticker, name, asset_type, sector, isin, cnpj, active, quote { quoted_on, close_cents, volume_cents, trades_count }
+```
+
+- The catalog (`Asset`, `AssetQuote`) is global and holds no personal data. It lists the shares (ON, PN and units) and FII quotas of B3's cash market in standard lots, one quote per trading day.
+- `MarketDataSyncJob` runs at 7h (São Paulo), Tuesday to Saturday (`config/schedule.yml`), and imports the previous weekday's closing quotes from B3's daily COTAHIST file (`MarketData::B3Quotes`). A day without a file (a holiday) is only logged. With Monday's quotes, or when run as `MarketDataSyncJob.perform_later("2026-11-11", with_registry: true)`, it also reads the CVM registry of the current and previous year: the FII monthly report (`MarketData::CvmFunds`, matched by ISIN: CNPJ, name and segment) and the listed companies' FCA (`MarketData::CvmCompanies`, matched by ticker: CNPJ, name and sector). Assets without a quote in the last 30 days become inactive and leave `GET /assets`, but `GET /assets/:ticker` still shows them.
+- Downloads (`MarketData::Download`) use 10-second timeouts and size limits, and any failure raises `MarketData::Unavailable`, which retries the job in an hour (3 attempts). Logs carry only counts, the host and the exception class.
+- Sources: [B3 historical quotes](https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/historico/mercado-a-vista/cotacoes-historicas/) (end-of-day and historical quotes may be redistributed free of charge, B3 Market Data Commercial Policy, items 7.9 and 7.10) and [CVM open data](https://dados.cvm.gov.br/) under the Open Database License (ODbL), which requires citing CVM as the source in the app.

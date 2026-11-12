@@ -81,6 +81,10 @@ tags:
       nature (fixed or variable) defaults to the category's `default_nature`.
   - name: Projection
     description: Month by month balance projection built from the latest balance and the entries' due dates.
+  - name: Assets
+    description: Catalog of stocks and FIIs listed on B3, with the closing quote of the latest trading day. Quotes come from
+      B3's daily COTAHIST file and the registry (CNPJ, full name, sector or FII segment) from CVM open data (ODbL). Amounts
+      are integer cents (BRL).
 paths:
   /auth/register:
     post:
@@ -1228,6 +1232,47 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /assets:
+    get:
+      tags: [Assets]
+      summary: List the active stocks and FIIs by ticker
+      description: An asset is active while it has a quote in the last 30 days.
+      parameters:
+        - { name: asset_type, in: query, schema: { type: string, enum: [stock, fii] } }
+        - { name: sector, in: query, description: Exact sector or FII segment, schema: { type: string }, example: Logística }
+        - { name: q, in: query, description: "Ticker prefix or any part of the name, case insensitive", schema: { type: string }, example: petr }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of assets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Asset" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+  /assets/{ticker}:
+    get:
+      tags: [Assets]
+      summary: Show an asset with its latest quote
+      description: Inactive assets are shown too, so a position in a delisted asset can still be opened.
+      parameters:
+        - { name: ticker, in: path, required: true, description: Case insensitive, schema: { type: string }, example: PETR4 }
+      responses:
+        "200":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssetDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /admin/categories:
     get:
       tags: [Admin]
@@ -1505,6 +1550,35 @@ components:
         position: { type: integer, minimum: 0 }
         default_nature: { type: [string, "null"], enum: [fixed, variable, null], description: Required for expense categories; income has none }
         active: { type: boolean }
+    Asset:
+      type: object
+      required: [ticker, name, asset_type, sector]
+      properties:
+        ticker: { type: string, pattern: "^[A-Z][A-Z0-9]{3}[0-9]{1,2}B?$", example: PETR4 }
+        name: { type: string, example: PETROLEO BRASILEIRO S.A. PETROBRAS }
+        asset_type: { type: string, enum: [stock, fii] }
+        sector: { type: [string, "null"], description: "Company sector or FII segment, from CVM", example: Petróleo e Gás }
+    AssetDetail:
+      allOf:
+        - $ref: "#/components/schemas/Asset"
+        - type: object
+          required: [isin, cnpj, active, quote]
+          properties:
+            isin: { type: string, example: BRPETRACNPR6 }
+            cnpj: { type: [string, "null"], pattern: "^[0-9]{14}$", description: "Digits only; null until matched with CVM" }
+            active: { type: boolean, description: Has a quote in the last 30 days }
+            quote:
+              oneOf:
+                - { $ref: "#/components/schemas/AssetQuote" }
+                - { type: "null" }
+    AssetQuote:
+      type: object
+      required: [quoted_on, close_cents, volume_cents, trades_count]
+      properties:
+        quoted_on: { type: string, format: date, description: Trading day }
+        close_cents: { type: integer, minimum: 1, description: Closing price per share or quota }
+        volume_cents: { type: integer, minimum: 0, description: Traded volume of the day }
+        trades_count: { type: integer, minimum: 0 }
     Balance:
       type: object
       properties:
