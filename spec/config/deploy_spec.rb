@@ -57,6 +57,16 @@ RSpec.describe "Kamal deploy configuration" do
     end
   end
 
+  it "reuses the image layers of the previous build through a registry cache per architecture" do
+    expect(config.dig("builder", "cache")).to eq(
+      "type" => "registry",
+      "image" => "octo/#{app['slug']}-api-build-cache-amd64",
+      "options" => "mode=max"
+    )
+    environment["DEPLOY_ARCH"] = "arm64"
+    expect(render("config/deploy.yml").dig("builder", "cache", "image")).to eq("octo/#{app['slug']}-api-build-cache-arm64")
+  end
+
   it "delivers every variable the app requires to boot in production" do
     delivered = config.dig("env", "clear").keys + config.dig("env", "secret")
     expect(EnvValidator::REQUIRED - delivered).to be_empty
