@@ -55,6 +55,8 @@ info:
     | `consent_required` | 422 | Required consent cannot be revoked |
     | `only_for_single_entry` | 422 | `status` or `paid_on` changed with an entry `scope` other than `one` |
     | `installment_amount_locked` | 422 | An installment's `amount_cents` changed with a `scope` other than `one` |
+    | `insufficient_quantity` | 422 | Deleting an investment transaction would leave a later sale without enough shares |
+    | `insufficient_reserve` | 422 | Deleting an emergency reserve movement would leave a later withdrawal without enough money |
     | `rate_limited` | 429 | Too many requests, see `Retry-After` |
     | `internal_error` | 500 | Unexpected error |
     | `oauth_provider_unavailable` | 503 | The provider's signing keys could not be fetched |
@@ -65,7 +67,13 @@ info:
     (`nature` on an income entry, `kind` on an installments series of income) and `not_a_number`,
     `greater_than_or_equal_to`, `less_than_or_equal_to` (series `entries_count` and `total_cents`, and amounts above
     100,000,000,000.00 or a balance below its negative) and `present` (series `entries_count` and `total_cents`), and
-    `immutable` (a category's `key` or `kind` after it is created).
+    `immutable` (a category's `key` or `kind` after it is created, or an investment transaction's `ticker`),
+    `unknown_asset` (a `ticker` that is not in the catalog), `insufficient_quantity` (a transaction that would leave the
+    position below zero shares on some day) and `only_for_trades` (`price_cents`, `fees_cents` or `debit_balance` on a
+    split, reverse split or bonus), `rate_required` and `rate_not_allowed` (a reserve account's `cdi_percent_bps` or
+    `annual_rate_bps` missing for its kind, or sent to a kind that does not use it), `insufficient_reserve` (a
+    withdrawal larger than the account holds on its date), `anchor_not_allowed` (`debit_balance` on a reserve balance
+    anchor) and `required` (a reserve movement's account that does not exist or belongs to someone else).
 servers:
   - url: /api/v1
 tags:
@@ -81,6 +89,17 @@ tags:
       nature (fixed or variable) defaults to the category's `default_nature`.
   - name: Projection
     description: Month by month balance projection built from the latest balance and the entries' due dates.
+  - name: Investments
+    description: The user's portfolio, built from their transactions. Amounts are integer cents (BRL) and per-share prices
+      with more decimals are integers in `_e8` (hundred-millionths of a real). Informational only, never investment advice.
+  - name: Reserve
+    description: The emergency reserve, built from the user's accounts and movements and valued with the Selic, CDI and
+      savings rates published by the Central Bank (SGS series 11, 12, 195 and 432). Amounts are integer cents (BRL) and
+      rates are integers in `_e8` (hundred-millionths). Informational only, never investment advice.
+  - name: Assets
+    description: Catalog of stocks and FIIs listed on B3, with the closing quote of the latest trading day. Quotes come from
+      B3's daily COTAHIST file and the registry (CNPJ, full name, sector or FII segment) from CVM open data (ODbL). Amounts
+      are integer cents (BRL).
 paths:
   /auth/register:
     post:
@@ -1228,6 +1247,450 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /investment_transactions:
+    get:
+      tags: [Investments]
+      summary: List the current user's investment transactions by trade date
+      parameters:
+        - { name: ticker, in: query, schema: { type: string }, example: PETR4 }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/InvestmentTransaction" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Investments]
+      summary: Record a buy, sell, split, reverse split or bonus
+      description: |
+        The first transaction of a ticker opens the position, with `goal` or, without it, `income` for an FII and
+        `growth` for a stock. For "I already hold X shares at an average price of Y", send a buy with that quantity
+        and price. With `debit_balance`, a buy creates a paid expense in the `investment_contribution` category and a
+        sell a paid income in `investment_redemption`, both on `traded_on`, so the projection counts the money.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvestmentTransactionInput" }
+      responses:
+        "201": { $ref: "#/components/responses/InvestmentTransaction" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /investment_transactions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Investments]
+      summary: Show an investment transaction
+      description: Another user's record answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentTransaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Investments]
+      summary: Update an investment transaction
+      description: |
+        The `ticker` cannot change (`immutable`) and `goal` is ignored. The linked expense or income follows the new
+        values; `debit_balance` `false` deletes it and `true` creates it. Without `debit_balance` the link is kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvestmentTransactionInput" }
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentTransaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Investments]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentTransaction" }
+    delete:
+      tags: [Investments]
+      summary: Delete an investment transaction
+      description: Also deletes its linked expense or income, and the position when it was its last transaction.
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [deleted_id]
+                    properties:
+                      deleted_id: { type: string, format: uuid }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: A later sale would be left without enough shares (`insufficient_quantity`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /investment_positions/{ticker}:
+    parameters:
+      - { name: ticker, in: path, required: true, description: Case insensitive, schema: { type: string }, example: HGLG11 }
+    patch:
+      tags: [Investments]
+      summary: Change the goal of a position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [goal]
+              properties:
+                goal: { type: string, enum: [income, growth] }
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentPosition" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Investments]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentPosition" }
+  /portfolio:
+    get:
+      tags: [Investments]
+      summary: Positions and totals of the current user's portfolio
+      description: |
+        Quantities and costs come from the transactions: the average price is weighted and includes fees, a sale
+        removes shares at the average price, and splits, reverse splits and bonuses change the shares but not the
+        cost. The market value uses the latest closing quote, or the cost when the asset has no quote.
+      parameters:
+        - { name: goal, in: query, schema: { type: string, enum: [income, growth] } }
+        - { name: include_closed, in: query, description: Also list positions with zero shares, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Portfolio
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [totals, goals, positions]
+                    properties:
+                      totals: { $ref: "#/components/schemas/PortfolioTotals" }
+                      goals:
+                        type: object
+                        required: [income, growth]
+                        properties:
+                          income: { $ref: "#/components/schemas/PortfolioTotals" }
+                          growth: { $ref: "#/components/schemas/PortfolioTotals" }
+                      positions:
+                        type: array
+                        items: { $ref: "#/components/schemas/PortfolioPosition" }
+  /portfolio/history:
+    get:
+      tags: [Investments]
+      summary: Month by month market value and net contributions
+      description: |
+        From the month of the first transaction to the current month (at most the last 120 months). Each month values
+        the shares held on its last day at the last closing quote up to that day, or at cost when there is none.
+      responses:
+        "200":
+          description: Months, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [month, contributed_cents, market_value_cents]
+                      properties:
+                        month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
+                        contributed_cents: { type: integer, description: Buys with fees minus sale proceeds net of fees, up to the month }
+                        market_value_cents: { type: integer }
+  /reserve_accounts:
+    get:
+      tags: [Reserve]
+      summary: List the current user's emergency reserve accounts, oldest first
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReserveAccount" }
+    post:
+      tags: [Reserve]
+      summary: Create an emergency reserve account
+      description: |
+        `cdi_percent_bps` is required for a `cdb` and `annual_rate_bps` for a `fixed_rate` account (`rate_required`);
+        any other kind refuses them (`rate_not_allowed`). `tax_exempt` marks an LCI or LCA; savings and idle money are
+        always exempt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReserveAccountInput" }
+      responses:
+        "201": { $ref: "#/components/responses/ReserveAccount" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /reserve_accounts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Reserve]
+      summary: Show an emergency reserve account
+      description: Another user's record answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/ReserveAccount" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Reserve]
+      summary: Update an emergency reserve account
+      description: Changing the kind recomputes the account from its movements; send the rate the new kind needs and `null` for the other.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReserveAccountInput" }
+      responses:
+        "200": { $ref: "#/components/responses/ReserveAccount" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Reserve]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/ReserveAccount" }
+    delete:
+      tags: [Reserve]
+      summary: Delete an emergency reserve account
+      description: Also deletes its movements and the expenses and income they created with `debit_balance`.
+      responses:
+        "200": { $ref: "#/components/responses/DeletedId" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reserve_movements:
+    get:
+      tags: [Reserve]
+      summary: List the current user's emergency reserve movements by date
+      parameters:
+        - { name: account_id, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of movements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReserveMovement" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Reserve]
+      summary: Record a deposit, a withdrawal or the account's balance on a date
+      description: |
+        An `anchor` ("today I have X") restarts the account from its amount, which counts as one deposit made on its
+        date for the income tax estimate. A withdrawal takes the gross amount from the oldest deposits first and
+        cannot exceed what the account holds on its date (`insufficient_reserve`). With `debit_balance`, a deposit
+        creates a paid expense in the `reserve_deposit` category and a withdrawal a paid income in
+        `reserve_withdrawal`, both on `moved_on`; an anchor refuses it (`anchor_not_allowed`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReserveMovementInput" }
+      responses:
+        "201": { $ref: "#/components/responses/ReserveMovement" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /reserve_movements/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Reserve]
+      summary: Show an emergency reserve movement
+      description: Another user's record answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/ReserveMovement" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Reserve]
+      summary: Update an emergency reserve movement
+      description: |
+        The `account_id` cannot change (`immutable`). The linked expense or income follows the new values;
+        `debit_balance` `false` deletes it and `true` creates it. Without `debit_balance` the link is kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReserveMovementInput" }
+      responses:
+        "200": { $ref: "#/components/responses/ReserveMovement" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Reserve]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/ReserveMovement" }
+    delete:
+      tags: [Reserve]
+      summary: Delete an emergency reserve movement
+      description: Also deletes its linked expense or income.
+      responses:
+        "200": { $ref: "#/components/responses/DeletedId" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: A later withdrawal would be left without enough money (`insufficient_reserve`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /reserve:
+    get:
+      tags: [Reserve]
+      summary: The emergency reserve today, the suggested reserve and the alerts
+      description: |
+        Each account is valued from its movements: Treasury Selic by the daily Selic, a CDB by its percentage of the
+        daily CDI, a fixed rate account by its annual rate over 252 business days, savings on each monthly
+        anniversary (deposits on the 29th to the 31st count from the 1st) and idle money does not grow. Days the rates
+        were not imported yet use the last known rate. `tax_cents` is the regressive income tax (22.5% up to 180 days,
+        20% up to 360, 17.5% up to 720 and 15% after) on the gains of each deposit if everything were withdrawn today;
+        IOF is ignored. The suggestion is `goal_months` times the average fixed expenses of the last three closed
+        months that have any, and is null without fixed expenses. Only numbers from the user's own data, never
+        investment advice.
+      responses:
+        "200": { $ref: "#/components/responses/ReserveSummary" }
+    patch:
+      tags: [Reserve]
+      summary: Change the reserve goal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReserveGoalInput" }
+      responses:
+        "200": { $ref: "#/components/responses/ReserveSummary" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Reserve]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/ReserveSummary" }
+  /reserve/projection:
+    get:
+      tags: [Reserve]
+      summary: Month by month gross and net value of the emergency reserve
+      description: |
+        From the current month, each account valued on the last day of the month. Future business days use the
+        current Selic target (Treasury Selic), the target minus 0.10 point as the CDI estimate (CDB), the account's
+        annual rate (fixed rate) or the last monthly savings yield. Future business days are Monday to Friday, without
+        holidays.
+      parameters:
+        - { name: months, in: query, schema: { type: integer, minimum: 1, maximum: 60, default: 12 } }
+      responses:
+        "200":
+          description: Months and assumptions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [months, assumptions]
+                    properties:
+                      months:
+                        type: array
+                        items:
+                          type: object
+                          required: [month, gross_cents, net_cents, accounts]
+                          properties:
+                            month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
+                            gross_cents: { type: integer }
+                            net_cents: { type: integer }
+                            accounts:
+                              type: array
+                              items:
+                                type: object
+                                required: [id, gross_cents, net_cents]
+                                properties:
+                                  id: { type: string, format: uuid }
+                                  gross_cents: { type: integer }
+                                  net_cents: { type: integer }
+                      assumptions: { $ref: "#/components/schemas/ReserveAssumptions" }
+        "400":
+          description: "`months` is not an integer from 1 to 60 (`invalid_months`)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /assets:
+    get:
+      tags: [Assets]
+      summary: List the active stocks and FIIs by ticker
+      description: An asset is active while it has a quote in the last 30 days.
+      parameters:
+        - { name: asset_type, in: query, schema: { type: string, enum: [stock, fii] } }
+        - { name: sector, in: query, description: Exact sector or FII segment, schema: { type: string }, example: Logística }
+        - { name: q, in: query, description: "Ticker prefix or any part of the name, case insensitive", schema: { type: string }, example: petr }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of assets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Asset" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+  /assets/{ticker}:
+    get:
+      tags: [Assets]
+      summary: Show an asset with its latest quote
+      description: Inactive assets are shown too, so a position in a delisted asset can still be opened.
+      parameters:
+        - { name: ticker, in: path, required: true, description: Case insensitive, schema: { type: string }, example: PETR4 }
+      responses:
+        "200":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AssetDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /admin/categories:
     get:
       tags: [Admin]
@@ -1505,6 +1968,191 @@ components:
         position: { type: integer, minimum: 0 }
         default_nature: { type: [string, "null"], enum: [fixed, variable, null], description: Required for expense categories; income has none }
         active: { type: boolean }
+    InvestmentTransaction:
+      type: object
+      required: [id, ticker, kind, traded_on, quantity, price_cents, fees_cents, entry_id]
+      properties:
+        id: { type: string, format: uuid }
+        ticker: { type: string, example: PETR4 }
+        kind: { type: string, enum: [buy, sell, split, reverse_split, bonus] }
+        traded_on: { type: string, format: date }
+        quantity: { type: integer, minimum: 1, description: Shares bought or sold, or added (split, bonus) or removed (reverse split) }
+        price_cents: { type: [integer, "null"], minimum: 1, description: Price per share; buys and sells only }
+        fees_cents: { type: integer, minimum: 0 }
+        entry_id: { type: [string, "null"], format: uuid, description: The expense or income created by `debit_balance` }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    InvestmentTransactionInput:
+      type: object
+      properties:
+        ticker: { type: string, description: Any asset of the catalog, including inactive ones; only on create }
+        kind: { type: string, enum: [buy, sell, split, reverse_split, bonus] }
+        traded_on: { type: string, format: date, description: Today or a past date }
+        quantity: { type: integer, minimum: 1, maximum: 1000000000 }
+        price_cents: { type: [integer, "null"], minimum: 1, maximum: 10000000000000, description: Required for buys and sells, absent otherwise }
+        fees_cents: { type: integer, minimum: 0, maximum: 10000000000000, default: 0, description: Buys and sells only }
+        goal: { type: string, enum: [income, growth], description: Only when the transaction opens the position }
+        debit_balance: { type: boolean, default: false, description: Buys and sells only }
+    InvestmentPosition:
+      type: object
+      required: [ticker, goal]
+      properties:
+        ticker: { type: string }
+        goal: { type: string, enum: [income, growth] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PortfolioTotals:
+      type: object
+      required: [contributed_cents, cost_cents, market_value_cents, gain_cents, realized_cents]
+      properties:
+        contributed_cents: { type: integer, description: Buys with fees minus sale proceeds net of fees }
+        cost_cents: { type: integer, description: Cost of the shares held, at the average price }
+        market_value_cents: { type: integer }
+        gain_cents: { type: integer, description: Market value minus cost; may be negative }
+        realized_cents: { type: integer, description: Profit or loss of the sales; may be negative }
+    PortfolioPosition:
+      type: object
+      required: [ticker, name, asset_type, goal, quantity, average_price_e8, cost_cents, contributed_cents, realized_cents, quote, market_value_cents, gain_cents]
+      properties:
+        ticker: { type: string }
+        name: { type: string }
+        asset_type: { type: string, enum: [stock, fii] }
+        goal: { type: string, enum: [income, growth] }
+        quantity: { type: integer, minimum: 0 }
+        average_price_e8: { type: integer, description: "Average price per share in hundred-millionths of a real (R$ 12.34 is 1234000000)" }
+        cost_cents: { type: integer }
+        contributed_cents: { type: integer }
+        realized_cents: { type: integer }
+        quote:
+          oneOf:
+            - { $ref: "#/components/schemas/AssetQuote" }
+            - { type: "null" }
+        market_value_cents: { type: integer, description: Shares times the latest close, or the cost without a quote }
+        gain_cents: { type: integer }
+    ReserveAccount:
+      type: object
+      required: [id, name, kind, cdi_percent_bps, annual_rate_bps, tax_exempt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 100 }
+        kind: { type: string, enum: [selic_treasury, cdb, savings, idle, fixed_rate] }
+        cdi_percent_bps: { type: [integer, "null"], description: "Percentage of the CDI in basis points (110% is 11000); CDB only" }
+        annual_rate_bps: { type: [integer, "null"], description: "Annual rate in basis points (12% is 1200); fixed rate only" }
+        tax_exempt: { type: boolean, description: LCI or LCA }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ReserveAccountInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        kind: { type: string, enum: [selic_treasury, cdb, savings, idle, fixed_rate] }
+        cdi_percent_bps: { type: [integer, "null"], minimum: 1, maximum: 50000 }
+        annual_rate_bps: { type: [integer, "null"], minimum: 1, maximum: 10000 }
+        tax_exempt: { type: boolean, default: false }
+    ReserveMovement:
+      type: object
+      required: [id, account_id, kind, moved_on, amount_cents, entry_id]
+      properties:
+        id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        kind: { type: string, enum: [anchor, deposit, withdrawal] }
+        moved_on: { type: string, format: date }
+        amount_cents: { type: integer, minimum: 0 }
+        entry_id: { type: [string, "null"], format: uuid, description: The expense or income created by `debit_balance` }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ReserveMovementInput:
+      type: object
+      properties:
+        account_id: { type: string, format: uuid, description: Only on create }
+        kind: { type: string, enum: [anchor, deposit, withdrawal] }
+        moved_on: { type: string, format: date, description: Today or a past date }
+        amount_cents: { type: integer, minimum: 0, maximum: 10000000000000, description: Zero only on an anchor }
+        debit_balance: { type: boolean, default: false, description: Deposits and withdrawals only }
+    ReserveValue:
+      type: object
+      required: [gross_cents, net_cents, invested_cents, yield_cents, tax_cents]
+      properties:
+        gross_cents: { type: integer }
+        net_cents: { type: integer, description: Gross minus the estimated income tax }
+        invested_cents: { type: integer, description: Deposits still in the account, at cost }
+        yield_cents: { type: integer }
+        tax_cents: { type: integer }
+    ReserveSummary:
+      type: object
+      required: [totals, accounts, suggestion, goal, alerts, rates_as_of]
+      properties:
+        totals: { $ref: "#/components/schemas/ReserveValue" }
+        accounts:
+          type: array
+          items:
+            allOf:
+              - { $ref: "#/components/schemas/ReserveAccount" }
+              - { $ref: "#/components/schemas/ReserveValue" }
+        suggestion:
+          type: [object, "null"]
+          required: [average_fixed_cents, months_counted, goal_months, suggested_cents, coverage_months_e2]
+          properties:
+            average_fixed_cents: { type: integer }
+            months_counted: { type: integer, minimum: 1, maximum: 3 }
+            goal_months: { type: integer }
+            suggested_cents: { type: integer }
+            coverage_months_e2: { type: integer, description: "Net total over the average, in hundredths of a month (420 is 4.2 months)" }
+        goal:
+          type: object
+          required: [months, cents, target_cents]
+          properties:
+            months: { type: integer, minimum: 1, maximum: 24 }
+            cents: { type: [integer, "null"], description: The amount the user set, if any }
+            target_cents: { type: [integer, "null"], description: "`cents`, or the suggestion without it" }
+        alerts:
+          type: array
+          items: { type: string, enum: [no_reserve, below_suggestion, idle_money] }
+        rates_as_of: { type: [string, "null"], format: date, description: Date of the latest imported Selic }
+    ReserveGoalInput:
+      type: object
+      properties:
+        goal_months: { type: integer, minimum: 1, maximum: 24 }
+        goal_cents: { type: [integer, "null"], minimum: 1, maximum: 10000000000000, description: "`null` goes back to the suggestion" }
+    ReserveAssumptions:
+      type: object
+      required: [selic_target_e8, cdi_estimate_e8, savings_monthly_e8, rates_as_of, holidays_ignored, iof_ignored]
+      properties:
+        selic_target_e8: { type: [integer, "null"], description: "Annual Selic target in hundred-millionths (13.75% is 13750000)" }
+        cdi_estimate_e8: { type: [integer, "null"], description: The Selic target minus 0.10 point }
+        savings_monthly_e8: { type: [integer, "null"], description: The last monthly savings yield }
+        rates_as_of: { type: [string, "null"], format: date }
+        holidays_ignored: { type: boolean }
+        iof_ignored: { type: boolean }
+    Asset:
+      type: object
+      required: [ticker, name, asset_type, sector]
+      properties:
+        ticker: { type: string, pattern: "^[A-Z][A-Z0-9]{3}[0-9]{1,2}B?$", example: PETR4 }
+        name: { type: string, example: PETROLEO BRASILEIRO S.A. PETROBRAS }
+        asset_type: { type: string, enum: [stock, fii] }
+        sector: { type: [string, "null"], description: "Company sector or FII segment, from CVM", example: Petróleo e Gás }
+    AssetDetail:
+      allOf:
+        - $ref: "#/components/schemas/Asset"
+        - type: object
+          required: [isin, cnpj, active, quote]
+          properties:
+            isin: { type: string, example: BRPETRACNPR6 }
+            cnpj: { type: [string, "null"], pattern: "^[0-9]{14}$", description: "Digits only; null until matched with CVM" }
+            active: { type: boolean, description: Has a quote in the last 30 days }
+            quote:
+              oneOf:
+                - { $ref: "#/components/schemas/AssetQuote" }
+                - { type: "null" }
+    AssetQuote:
+      type: object
+      required: [quoted_on, close_cents, volume_cents, trades_count]
+      properties:
+        quoted_on: { type: string, format: date, description: Trading day }
+        close_cents: { type: integer, minimum: 1, description: Closing price per share or quota }
+        volume_cents: { type: integer, minimum: 0, description: Traded volume of the day }
+        trades_count: { type: integer, minimum: 0 }
     Balance:
       type: object
       properties:
@@ -1618,7 +2266,7 @@ components:
             negative_months_count: { type: integer, minimum: 0 }
     ProjectionMonth:
       type: object
-      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative, expense_by_category]
+      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative, reserve_cents, expense_by_category]
       properties:
         month: { type: string, example: "2026-11" }
         opening_cents: { type: integer }
@@ -1629,6 +2277,7 @@ components:
         closing_cents: { type: integer, description: May be negative }
         savings_cents: { type: integer, description: Income minus expenses from the first projected month through this one; may be negative }
         negative: { type: boolean, description: The month closes below zero }
+        reserve_cents: { type: integer, description: Net value of the emergency reserve on the month's last day, as in `GET /reserve/projection` }
         expense_by_category:
           type: array
           description: Expenses of the month summed by category, largest first (ties by key)
@@ -1654,12 +2303,30 @@ components:
             with_two_factor: { type: integer }
         engagement:
           type: object
-          required: [with_balance, with_entries, with_5_series, entries_created_30d]
+          required: [with_balance, with_entries, with_5_series, entries_created_30d, with_portfolio, investment_transactions_30d, positions_by_goal, with_reserve, reserve_accounts_by_kind]
           properties:
             with_balance: { type: integer, description: Users with at least one balance }
             with_entries: { type: integer, description: Users with at least one entry }
             with_5_series: { type: integer, description: Users with at least five series }
             entries_created_30d: { type: integer }
+            with_portfolio: { type: integer, description: Users with at least one investment position }
+            investment_transactions_30d: { type: integer }
+            positions_by_goal:
+              type: object
+              required: [income, growth]
+              properties:
+                income: { type: integer }
+                growth: { type: integer }
+            with_reserve: { type: integer, description: Users with at least one emergency reserve account }
+            reserve_accounts_by_kind:
+              type: object
+              required: [selic_treasury, cdb, savings, idle, fixed_rate]
+              properties:
+                selic_treasury: { type: integer }
+                cdb: { type: integer }
+                savings: { type: integer }
+                idle: { type: integer }
+                fixed_rate: { type: integer }
         signups_by_week:
           type: array
           description: The last 12 weeks, oldest first
@@ -1696,6 +2363,64 @@ components:
         provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
         id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
+    ReserveAccount:
+      description: Emergency reserve account
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/ReserveAccount" }
+    ReserveMovement:
+      description: Emergency reserve movement
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/ReserveMovement" }
+    ReserveSummary:
+      description: Emergency reserve
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/ReserveSummary" }
+    DeletedId:
+      description: Deleted
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                type: object
+                required: [deleted_id]
+                properties:
+                  deleted_id: { type: string, format: uuid }
+    InvestmentTransaction:
+      description: Investment transaction
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/InvestmentTransaction" }
+    InvestmentPosition:
+      description: Investment position
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/InvestmentPosition" }
     AdminCategory:
       description: Category
       content:

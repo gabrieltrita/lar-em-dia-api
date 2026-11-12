@@ -59,6 +59,8 @@ RSpec.describe "LGPD: consents and data export", type: :request do
     it "includes every PERSONAL_DATA association, serialized by its blueprint" do
       identity = create(:identity, user: user)
       series = create(:entry_series, user: user)
+      transaction = create(:investment_transaction, user: user)
+      movement = create(:reserve_movement, user: user)
       create(:identity)
 
       get "/api/v1/me/export", headers: auth_headers(user)
@@ -66,6 +68,10 @@ RSpec.describe "LGPD: consents and data export", type: :request do
       expect(json["content"].keys).to eq(User::PERSONAL_DATA.map(&:to_s))
       expect(json.dig("content", "identities")).to eq([ IdentityBlueprint.render_as_hash(identity).as_json ])
       expect(json.dig("content", "entry_series")).to eq([ EntrySeriesBlueprint.render_as_hash(series).as_json ])
+      expect(json.dig("content", "investment_transactions")).to eq([ InvestmentTransactionBlueprint.render_as_hash(transaction).as_json ])
+      expect(json.dig("content", "investment_positions", 0)).to include("ticker" => transaction.position.ticker, "goal" => "growth")
+      expect(json.dig("content", "reserve_movements")).to eq([ ReserveMovementBlueprint.render_as_hash(movement).as_json ])
+      expect(json.dig("content", "reserve_accounts", 0)).to include("name" => movement.account.name, "kind" => "selic_treasury")
     end
   end
 end

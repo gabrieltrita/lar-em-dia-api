@@ -93,7 +93,7 @@ app/
     api/v1/me/       sessions, two_factor, consents, identities
     api/v1/admin/    users, audit_logs
     api/v1/          categories, balances, entries (Lar em Dia)
-  jobs/              MaintenanceCleanupJob, DueAlertsJob
+  jobs/              MaintenanceCleanupJob, DueAlertsJob, MarketDataSyncJob, InterestRateSyncJob
   mailers/           UserMailer
   models/            User, RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry
   policies/          Pundit
@@ -127,7 +127,7 @@ Starting a new app from this base: follow [docs/FORKING.md](docs/FORKING.md) (re
 
 `Dockerfile` (multi-stage, non-root) is for production; `Dockerfile.dev` is used by docker-compose.
 
-The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `SECRET_KEY_BASE` (64+, `bin/rails secret`), `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `ENABLE_SIDEKIQ_WEB` (`true` mounts the Sidekiq dashboard at `/sidekiq` in production; off by default, turn it on only while you need it), `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login), `APPLE_CLIENT_IDS` (comma-separated Apple identifiers: the app's bundle id and the web Services ID; empty disables Apple login), `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` (the Sign in with Apple key: team id, key id and the contents of the `.p8` file with `\n` instead of line breaks; all three or none, used to revoke the Apple token when an account is deleted).
+The app refuses to boot in production unless these are set and strong enough: `DATABASE_URL`, `REDIS_URL`, `SIDEKIQ_REDIS_URL`, `SECRET_KEY_BASE` (64+, `bin/rails secret`), `JWT_SECRET` (64+), `AR_ENCRYPTION_*` (32+), `APP_HOSTS`, `CORS_ORIGINS` (https only), `FRONTEND_URL`, `MAILER_FROM`, `SMTP_ADDRESS`, `SIDEKIQ_WEB_USERNAME`, `SIDEKIQ_WEB_PASSWORD` (16+). Optional: `SENTRY_DSN`, `DISABLED_CRON_JOBS` (comma-separated job names from `config/schedule.yml` that this environment does not schedule; staging sets `market_data_sync,interest_rate_sync`), `JWT_SECRET_PREVIOUS`, `ENABLE_API_DOCS`, `ENABLE_SIDEKIQ_WEB` (`true` mounts the Sidekiq dashboard at `/sidekiq` in production; off by default, turn it on only while you need it), `TERMS_VERSION`, `PRIVACY_VERSION`, `GOOGLE_CLIENT_IDS` (comma-separated Google OAuth client ids: web, iOS, Android; empty disables Google login), `APPLE_CLIENT_IDS` (comma-separated Apple identifiers: the app's bundle id and the web Services ID; empty disables Apple login), `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` (the Sign in with Apple key: team id, key id and the contents of the `.p8` file with `\n` instead of line breaks; all three or none, used to revoke the Apple token when an account is deleted).
 
 Logs go to stdout as one JSON object per line. Each request is a single line (lograge) with `time`, `level`, `method`, `path`, `controller`, `action`, `status`, `duration`, `db`, `view`, `request_id`, `user_id` and, on errors, the exception class:
 
@@ -174,7 +174,7 @@ The dumps live on the same disk as the database, so they cover mistakes and bad 
 
 ### Staging with Kamal
 
-`bin/kamal setup -d staging` and `bin/kamal deploy -d staging` use `config/deploy.staging.yml` on top of `config/deploy.yml`: service `<slug>-api-staging` with its own Postgres and Redis containers, database `<slug>_api_staging`, and `ENABLE_API_DOCS=true`, so Swagger is at `/docs`. Staging can share the server with production or use another one, because `DEPLOY_HOST` comes from your environment.
+`bin/kamal setup -d staging` and `bin/kamal deploy -d staging` use `config/deploy.staging.yml` on top of `config/deploy.yml`: service `<slug>-api-staging` with its own Postgres and Redis containers, database `<slug>_api_staging`, `ENABLE_API_DOCS=true`, so Swagger is at `/docs`, and `DISABLED_CRON_JOBS=market_data_sync,interest_rate_sync`, so staging does not download B3, CVM and Central Bank data every day on top of production. `DISABLED_CRON_JOBS` takes job names from `config/schedule.yml`, separated by commas; Sidekiq removes them from the schedule when it starts. Import quotes in staging by hand with `bin/kamal app exec -d staging 'bin/rails "market_data:sync[2026-11-11,true]"'` (both arguments are optional: the date defaults to the previous weekday and `true` also refreshes the CVM registry), and interest rates with `bin/kamal app exec -d staging 'bin/rails interest_rates:sync'`. Staging can share the server with production or use another one, because `DEPLOY_HOST` comes from your environment.
 
 `.kamal/secrets.staging` reads every secret from a variable with the `STAGING_` prefix (`STAGING_JWT_SECRET`, `STAGING_DATABASE_URL`, `STAGING_POSTGRES_PASSWORD`, ...), so production and staging secrets can live side by side and one can never be used for the other by mistake; only `KAMAL_REGISTRY_PASSWORD` is shared. The variables that are not secrets keep their names (`DEPLOY_HOST`, `APP_HOST`, `CORS_ORIGINS`, `FRONTEND_URL`, ...): export the staging values before the command.
 
@@ -505,3 +505,54 @@ POST  /me/notification_settings/unsubscribe { "token": "..." }   (no login)
 - `DueAlertsJob` runs every hour (`config/schedule.yml`). It picks the time zones where it is 8h now (`users.time_zone`), and for each confirmed, active user there with alerts on it looks for pending expenses due `due_alert_days_before` days ahead (0 to 7, `inclusion` otherwise; 0 is the same day). When there are some, it sets `users.due_alerts_sent_on` to the user's local date (so a user gets at most one alert a day) and enqueues `DueAlertMailer.upcoming(user)`. The job receives no arguments in production and the mailer only the user: it reads the entries itself.
 - The email lists each bill's description and amount, links to `FRONTEND_URL/expenses` and carries an unsubscribe link, `FRONTEND_URL/unsubscribe?token=...`, valid for 60 days. The front end posts that token to `/me/notification_settings/unsubscribe`, which turns the alerts off without a login (`invalid_unsubscribe_token`, 401, for a bad or expired link). The link goes through the front end so that mail scanners following links do not unsubscribe anyone.
 - Every change is audited as `user.notification_settings_changed` with the changed fields and `via` (`settings` or `unsubscribe_link`). The unsubscribe endpoint is throttled at 10 per minute per IP (`notification_settings/unsubscribe/ip`).
+
+### 21. Investments catalog (Lar em Dia)
+
+```http
+GET /assets?asset_type=fii&sector=Logística&q=hglg&page=1&limit=20
+GET /assets/PETR4   -> ticker, name, asset_type, sector, isin, cnpj, active, quote { quoted_on, close_cents, volume_cents, trades_count }
+```
+
+- The catalog (`Asset`, `AssetQuote`) is global and holds no personal data. It lists the shares (ON, PN and units) and FII quotas of B3's cash market in standard lots, one quote per trading day.
+- `MarketDataSyncJob` runs at 7h (São Paulo), Tuesday to Saturday (`config/schedule.yml`), and imports the previous weekday's closing quotes from B3's daily COTAHIST file (`MarketData::B3Quotes`). A day without a file (a holiday) is only logged. With Monday's quotes, or when run as `MarketDataSyncJob.perform_later("2026-11-11", with_registry: true)`, it also reads the CVM registry of the current and previous year: the FII monthly report (`MarketData::CvmFunds`, matched by ISIN: CNPJ, name and segment) and the listed companies' FCA (`MarketData::CvmCompanies`, matched by ticker: CNPJ, name and sector). Assets without a quote in the last 30 days become inactive and leave `GET /assets`, but `GET /assets/:ticker` still shows them.
+- Downloads (`MarketData::Download`) use 10-second timeouts and size limits, and any failure raises `MarketData::Unavailable`, which retries the job in an hour (3 attempts). Logs carry only counts, the host and the exception class.
+- Sources: [B3 historical quotes](https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/historico/mercado-a-vista/cotacoes-historicas/) (end-of-day and historical quotes may be redistributed free of charge, B3 Market Data Commercial Policy, items 7.9 and 7.10) and [CVM open data](https://dados.cvm.gov.br/) under the Open Database License (ODbL), which requires citing CVM as the source in the app.
+
+### 22. Investments portfolio (Lar em Dia)
+
+```http
+POST   /investment_transactions { "ticker": "PETR4", "kind": "buy", "traded_on": "2026-10-01", "quantity": 100, "price_cents": 3000, "fees_cents": 50, "debit_balance": true }
+GET    /investment_transactions?ticker=PETR4&from=2026-01-01&to=2026-12-31
+PATCH  /investment_transactions/:id            DELETE /investment_transactions/:id
+PATCH  /investment_positions/PETR4 { "goal": "income" }
+GET    /portfolio?goal=growth&include_closed=true
+GET    /portfolio/history                      -> [{ "month": "2026-11", "contributed_cents", "market_value_cents" }]
+```
+
+- A portfolio is a list of transactions (`InvestmentTransaction`: `buy`, `sell`, `split`, `reverse_split`, `bonus`) grouped in one `InvestmentPosition` per asset, which only stores the goal (`income` or `growth`; FIIs start with `income` and stocks with `growth`, unless the first transaction sends `goal`). Quantity, cost, average price and realized profit are always recomputed by `PositionLedger`: the average price is weighted and includes fees, a sale removes shares at the average price, and splits, reverse splits and bonuses send the shares added or removed without changing the cost. Average prices are integers in `_e8` (hundred-millionths of a real).
+- No transaction may leave the position below zero shares on any day: creating or editing answers `validation_failed` with `insufficient_quantity` on `quantity`, and deleting a buy that a later sale needs answers `insufficient_quantity` (422). An unknown ticker answers `unknown_asset` on `ticker`, and the ticker of a saved transaction is `immutable`.
+- `debit_balance: true` creates a paid entry on the trade date: an expense in `investment_contribution` for a buy (shares × price + fees) and an income in `investment_redemption` for a sale (shares × price − fees), so the projection counts the cash. Editing the transaction updates it, `debit_balance: false` deletes it, and deleting the entry in the entries screen keeps the transaction.
+- `GET /portfolio` values each position at the latest close (`AssetQuote`), or at cost without a quote. `GET /portfolio/history` values the shares held at each month end at the last close up to that day, for at most the last 120 months.
+- Month-end quotes before the daily job started come from `bin/rails market_data:backfill[2019]` (`MarketData::Backfill`), which reads B3's monthly COTAHIST files line by line, keeps each asset's last quote of the month and creates delisted assets as inactive. It is idempotent; in production run it once with `bin/kamal app exec 'bin/rails market_data:backfill[2019]'` (about 15 seconds per month). `bin/rails "market_data:sync[DATE,true]"` runs the daily import right away, which is how staging gets quotes, since its schedule leaves the job out (`DISABLED_CRON_JOBS`).
+- Transactions and positions are personal data (`User::PERSONAL_DATA`): exported under `content` and destroyed by `anonymize!`. Admin metrics only count users with a portfolio, transactions in the last 30 days and positions by goal.
+- The API only records and computes from the user's own data; it never recommends assets. Clients show a notice that the numbers are informational and not investment advice.
+
+### 23. Emergency reserve (Lar em Dia)
+
+```http
+POST   /reserve_accounts { "name": "CDB liquidez diária", "kind": "cdb", "cdi_percent_bps": 10500, "tax_exempt": false }
+GET    /reserve_accounts                      PATCH /reserve_accounts/:id    DELETE /reserve_accounts/:id
+POST   /reserve_movements { "account_id": "…", "kind": "deposit", "moved_on": "2026-10-01", "amount_cents": 100000, "debit_balance": true }
+GET    /reserve_movements?account_id=…&from=2026-01-01&to=2026-12-31
+GET    /reserve                               -> totals, accounts, suggestion, goal, alerts, rates_as_of
+PATCH  /reserve { "goal_months": 6, "goal_cents": null }
+GET    /reserve/projection?months=12          -> months (gross and net per account) and assumptions
+```
+
+- An account (`ReserveAccount`, name encrypted) is `selic_treasury`, `cdb` (`cdi_percent_bps`, 110% is 11000), `savings`, `idle` or `fixed_rate` (`annual_rate_bps`, 12% is 1200). A missing rate answers `rate_required` and a rate the kind does not use `rate_not_allowed`. `tax_exempt` marks an LCI or LCA; savings and idle money are always exempt.
+- Movements (`ReserveMovement`) are `deposit`, `withdrawal` or `anchor` ("today I have X", like a `Balance`: the account restarts from that amount, which counts as one deposit on its date for the income tax). A withdrawal takes the gross amount from the oldest deposits first and cannot exceed what the account holds on its date (`insufficient_reserve`, also when deleting a deposit a later withdrawal needs). `debit_balance: true` creates a paid expense in `reserve_deposit` or a paid income in `reserve_withdrawal`; an anchor refuses it (`anchor_not_allowed`).
+- Values are never stored: `ReserveLedger` replays the movements and `ReserveGrowth` grows each deposit with `BigDecimal`, rounding to cents once. Past days use the Central Bank series in `interest_rates` (daily Selic, daily CDI times the CDB percentage, the fixed annual rate over 252 business days, savings on each monthly anniversary with deposits on the 29th to the 31st counting from the 1st); business days not imported yet use the last known rate. Future months use the Selic target, the target minus 0.10 point as the CDI estimate and the last savings yield, with Monday to Friday as business days (holidays ignored).
+- The net value subtracts the regressive income tax each deposit would pay if withdrawn that day (22.5% up to 180 days, 20% up to 360, 17.5% up to 720, 15% after); IOF is ignored. Each `GET /projection` month carries `reserve_cents`, the net reserve on its last day.
+- `GET /reserve` suggests `reserve_goal_months` (default 6, 1 to 24) times the average fixed expenses of the last three closed months that have any, or uses `reserve_goal_cents` when the user set one; `coverage_months_e2` is the net total over that average in hundredths of a month. Alerts: `no_reserve` (fixed expenses but no account), `below_suggestion` and `idle_money`. Clients word them as suggestions from the user's own data, never as investment advice.
+- `InterestRateSyncJob` (8h São Paulo, Tuesday to Saturday) imports the last 15 days of SGS series 11 (Selic), 12 (CDI), 195 (savings) and 432 (Selic target) through `InterestRates::Bcb`. Load the history once with `bin/rails "interest_rates:backfill[2019]"` (one request per series and year) and import right away with `bin/rails interest_rates:sync`. Staging leaves the job out (`DISABLED_CRON_JOBS=market_data_sync,interest_rate_sync`): run `bin/kamal app exec -d staging 'bin/rails interest_rates:sync'` by hand.
+- Accounts and movements are personal data (`User::PERSONAL_DATA`). Admin metrics only count users with a reserve and accounts by kind.

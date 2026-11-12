@@ -123,6 +123,8 @@ RSpec.describe "Kamal deploy configuration" do
       expect(staging.dig("accessories", "db", "env", "clear", "POSTGRES_DB")).to eq("#{app['slug']}_api_staging")
       expect(staging.dig("accessories", "db", "image")).to eq(config.dig("accessories", "db", "image"))
       expect(staging.dig("env", "clear", "ENABLE_API_DOCS")).to eq("true")
+      expect(staging.dig("env", "clear", "DISABLED_CRON_JOBS")).to eq("market_data_sync,interest_rate_sync")
+      expect(config.dig("env", "clear")).not_to have_key("DISABLED_CRON_JOBS")
       expect(config.dig("env", "clear")).not_to have_key("ENABLE_API_DOCS")
       expect(staging["service"]).not_to eq(config["service"])
     end

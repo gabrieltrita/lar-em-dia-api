@@ -10,10 +10,37 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_003000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "asset_quotes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "asset_id", null: false
+    t.date "quoted_on", null: false
+    t.bigint "close_cents", null: false
+    t.bigint "volume_cents", null: false
+    t.integer "trades_count", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id", "quoted_on"], name: "index_asset_quotes_on_asset_id_and_quoted_on", unique: true
+  end
+
+  create_table "assets", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "ticker", null: false
+    t.string "isin", null: false
+    t.string "name", null: false
+    t.string "asset_type", null: false
+    t.string "cnpj"
+    t.string "sector"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_type", "active"], name: "index_assets_on_asset_type_and_active"
+    t.index ["cnpj"], name: "index_assets_on_cnpj"
+    t.index ["isin"], name: "index_assets_on_isin"
+    t.index ["ticker"], name: "index_assets_on_ticker", unique: true
+  end
 
   create_table "audit_logs", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "actor_id"
@@ -109,6 +136,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000000) do
     t.index ["user_id", "provider"], name: "index_identities_on_user_id_and_provider", unique: true
   end
 
+  create_table "interest_rates", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "series", null: false
+    t.date "rate_on", null: false
+    t.bigint "rate_e8", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["series", "rate_on"], name: "index_interest_rates_on_series_and_rate_on", unique: true
+  end
+
+  create_table "investment_positions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "asset_id", null: false
+    t.string "goal", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id"], name: "index_investment_positions_on_asset_id"
+    t.index ["user_id", "asset_id"], name: "index_investment_positions_on_user_id_and_asset_id", unique: true
+  end
+
+  create_table "investment_transactions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "position_id", null: false
+    t.uuid "entry_id"
+    t.string "kind", null: false
+    t.date "traded_on", null: false
+    t.bigint "quantity", null: false
+    t.bigint "price_cents"
+    t.bigint "fees_cents", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["entry_id"], name: "index_investment_transactions_on_entry_id", unique: true
+    t.index ["position_id", "traded_on"], name: "index_investment_transactions_on_position_id_and_traded_on"
+    t.index ["user_id", "traded_on"], name: "index_investment_transactions_on_user_id_and_traded_on"
+  end
+
   create_table "refresh_tokens", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
     t.string "token_digest", null: false
@@ -126,6 +188,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000000) do
     t.index ["token_digest"], name: "index_refresh_tokens_on_token_digest", unique: true
     t.index ["user_id", "revoked_at"], name: "index_refresh_tokens_on_user_id_and_revoked_at"
     t.index ["user_id"], name: "index_refresh_tokens_on_user_id"
+  end
+
+  create_table "reserve_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.text "name", null: false
+    t.string "kind", null: false
+    t.integer "cdi_percent_bps"
+    t.integer "annual_rate_bps"
+    t.boolean "tax_exempt", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_reserve_accounts_on_user_id"
+  end
+
+  create_table "reserve_movements", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "account_id", null: false
+    t.uuid "entry_id"
+    t.string "kind", null: false
+    t.date "moved_on", null: false
+    t.bigint "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "moved_on"], name: "index_reserve_movements_on_account_id_and_moved_on"
+    t.index ["entry_id"], name: "index_reserve_movements_on_entry_id", unique: true
+    t.index ["user_id", "moved_on"], name: "index_reserve_movements_on_user_id_and_moved_on"
   end
 
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -154,12 +242,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000000) do
     t.boolean "due_alerts_enabled", default: true, null: false
     t.integer "due_alert_days_before", default: 1, null: false
     t.date "due_alerts_sent_on"
+    t.integer "reserve_goal_months", default: 6, null: false
+    t.bigint "reserve_goal_cents"
     t.index ["anonymized_at"], name: "index_users_on_anonymized_at"
     t.index ["confirmed_at"], name: "index_users_on_confirmed_at"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["role"], name: "index_users_on_role"
   end
 
+  add_foreign_key "asset_quotes", "assets"
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "balances", "users"
   add_foreign_key "consents", "users", on_delete: :cascade
@@ -168,5 +259,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000000) do
   add_foreign_key "entries", "users"
   add_foreign_key "entry_series", "users"
   add_foreign_key "identities", "users"
+  add_foreign_key "investment_positions", "assets"
+  add_foreign_key "investment_positions", "users"
+  add_foreign_key "investment_transactions", "entries", on_delete: :nullify
+  add_foreign_key "investment_transactions", "investment_positions", column: "position_id"
+  add_foreign_key "investment_transactions", "users"
   add_foreign_key "refresh_tokens", "users", on_delete: :cascade
+  add_foreign_key "reserve_accounts", "users"
+  add_foreign_key "reserve_movements", "entries", on_delete: :nullify
+  add_foreign_key "reserve_movements", "reserve_accounts", column: "account_id", on_delete: :cascade
+  add_foreign_key "reserve_movements", "users"
 end

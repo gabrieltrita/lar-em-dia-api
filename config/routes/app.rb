@@ -1,7 +1,18 @@
 resources :categories, only: :index
+resources :assets, only: %i[index show], param: :ticker
 resources :balances, only: %i[index show create update destroy]
 resources :entries, only: %i[index show create update destroy]
 resources :entry_series, only: :create
+resources :investment_transactions, only: %i[index show create update destroy]
+resources :investment_positions, only: :update, param: :ticker
+resource :portfolio, only: :show do
+  get :history
+end
+resources :reserve_accounts, only: %i[index show create update destroy]
+resources :reserve_movements, only: %i[index show create update destroy]
+resource :reserve, only: %i[show update] do
+  get :projection
+end
 resource :projection, only: :show do
   post :simulation
 end
