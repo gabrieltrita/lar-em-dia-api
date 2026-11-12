@@ -25,18 +25,26 @@ RSpec.describe ReserveSummary do
     )
   end
 
-  it "suggests the goal months times the average fixed expenses of the last closed months" do
+  it "suggests the goal months times the average fixed expenses of the last closed and the coming months" do
     fixed_expense(Date.new(2026, 7, 31), 999_999)
     fixed_expense(Date.new(2026, 9, 5), 300_000)
     fixed_expense(Date.new(2026, 10, 5), 200_000)
     fixed_expense(Date.new(2026, 10, 20), 100_000)
-    fixed_expense(Date.new(2026, 11, 5), 999_999)
+    fixed_expense(Date.new(2027, 2, 1), 999_999)
     create(:entry, user: user, category: housing, nature: :variable, due_on: Date.new(2026, 10, 5), amount_cents: 999_999)
 
     expect(summary).to include(
       suggestion: { average_fixed_cents: 300_000, months_counted: 2, goal_months: 6, suggested_cents: 1_800_000, coverage_months_e2: 0 },
       goal: { months: 6, cents: nil, target_cents: 1_800_000 }, alerts: [ "no_reserve" ]
     )
+  end
+
+  it "counts a new account that only has upcoming fixed expenses" do
+    fixed_expense(Date.new(2026, 11, 5), 300_000)
+    fixed_expense(Date.new(2026, 12, 5), 100_000)
+    fixed_expense(Date.new(2027, 1, 31), 200_000)
+
+    expect(summary[:suggestion]).to include(average_fixed_cents: 200_000, months_counted: 3, suggested_cents: 1_200_000)
   end
 
   it "measures the coverage and warns below the target and about idle money" do
