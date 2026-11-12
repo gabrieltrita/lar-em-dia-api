@@ -13,7 +13,7 @@ development:
 
 test:
   <<: *default
-  database: <%= Rails.configuration.x.app.slug %>_api_test
+  database: <%= Rails.configuration.x.app.slug %>_api_test<%= ENV["TEST_ENV_NUMBER"] %>
 
 production:
   <<: *default

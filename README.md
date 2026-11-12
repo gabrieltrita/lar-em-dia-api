@@ -64,6 +64,15 @@ bin/bundler-audit
 
 GitHub Actions runs all four on every pull request.
 
+The suite also runs in parallel with `parallel_tests`, one process per CPU, each with its own database (`<slug>_api_test`, `<slug>_api_test2`, ...), which is how CI runs it:
+
+```bash
+bin/rails parallel:create parallel:load_schema
+bundle exec parallel_rspec
+```
+
+Run `bin/rails parallel:load_schema` again after a migration, and pass `-n 2` to choose the number of processes. Each run records how long every spec file took in `tmp/parallel_runtime_rspec.log` (`.rspec_parallel`) and the next run splits the files by those times; CI keeps the log in its cache. SimpleCov merges the processes' results before checking 100% (`.simplecov` only merges in parallel runs, so a serial run never mixes in stale results), and `spec/support/parallel_openapi_coverage.rb` sends each process's covered requests and responses to the first process, which checks the API contract coverage. Avoid `bin/rails parallel:setup`: it also runs the seeds.
+
 `bundle exec rspec` enforces **100% line and branch coverage** with SimpleCov (`.simplecov`) and fails below it, locally and in CI. The HTML report is written to `coverage/index.html`; in CI it is attached to the run as the `coverage` artifact. Keep it at 100% by testing new code, not by lowering the threshold or excluding files; remove dead code instead.
 
 Request specs also enforce the API contract with `openapi_first` (`spec/support/openapi.rb`): every response under `/api/v1` is validated against `docs/openapi.yaml` (documented status and body schema), and the suite fails unless **100% of the documented responses** are exercised by some spec. Undocumented 401, 404 and 500 responses are tolerated on every route. The API coverage report is written to `coverage/openapi_coverage.html`. Documenting a new status therefore needs a spec that triggers it, and changing a response needs the matching schema change.

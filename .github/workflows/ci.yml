@@ -87,11 +87,19 @@ jobs:
         with:
           bundler-cache: true
 
-      - name: Prepare database
-        run: bin/rails db:create db:schema:load
+      - name: Restore spec runtimes
+        uses: actions/cache@v6
+        with:
+          path: tmp/parallel_runtime_rspec.log
+          key: rspec-runtime-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            rspec-runtime-${{ runner.os }}-
+
+      - name: Prepare databases
+        run: bin/rails parallel:create parallel:load_schema
 
       - name: Run tests
-        run: bundle exec rspec
+        run: bundle exec parallel_rspec
 
       - name: Upload coverage report
         if: always()
