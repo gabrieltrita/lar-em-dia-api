@@ -31,6 +31,10 @@ registry:
 
 builder:
   arch: <%= ENV.fetch("DEPLOY_ARCH", "amd64") %>
+  cache:
+    type: registry
+    image: <%= ENV.fetch("KAMAL_REGISTRY_USERNAME").downcase %>/<%= app["slug"] %>-api-build-cache-<%= ENV.fetch("DEPLOY_ARCH", "amd64") %>
+    options: mode=max
 
 env:
   clear:
