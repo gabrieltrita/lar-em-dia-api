@@ -1581,8 +1581,9 @@ paths:
         anniversary (deposits on the 29th to the 31st count from the 1st) and idle money does not grow. Days the rates
         were not imported yet use the last known rate. `tax_cents` is the regressive income tax (22.5% up to 180 days,
         20% up to 360, 17.5% up to 720 and 15% after) on the gains of each deposit if everything were withdrawn today;
-        IOF is ignored. The suggestion is `goal_months` times the average fixed expenses of the last three closed
-        months that have any, and is null without fixed expenses. Only numbers from the user's own data, never
+        IOF is ignored. The suggestion is `goal_months` times the average fixed expenses of the months that have
+        any among the last three closed months, the current month and the next two, and is null without fixed
+        expenses. Only numbers from the user's own data, never
         investment advice.
       responses:
         "200": { $ref: "#/components/responses/ReserveSummary" }

@@ -1,5 +1,6 @@
 class ReserveSummary
   CLOSED_MONTHS = 3
+  UPCOMING_MONTHS = 3
 
   def initialize(user, today: Date.current)
     @user = user
@@ -46,7 +47,8 @@ class ReserveSummary
   def fixed_by_month
     @fixed_by_month ||= begin
       current = @today.beginning_of_month
-      @user.entries.expense.fixed.where(due_on: (current << CLOSED_MONTHS)...current).group(Projection::MONTH_OF_DUE_ON).sum(:amount_cents)
+      @user.entries.expense.fixed.where(due_on: (current << CLOSED_MONTHS)...(current >> UPCOMING_MONTHS))
+        .group(Projection::MONTH_OF_DUE_ON).sum(:amount_cents)
     end
   end
 

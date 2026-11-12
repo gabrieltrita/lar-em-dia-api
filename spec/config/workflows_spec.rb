@@ -60,10 +60,10 @@ RSpec.describe "GitHub workflows" do
     expect(deploy_step["run"]).to include("command=deploy", 'if [ "$SETUP" = "true" ]; then command=setup; fi', 'bin/kamal "$command"')
   end
 
-  it "builds arm64 images through QEMU only when the server is arm64" do
-    qemu = action.dig("runs", "steps").find { |step| step["uses"].to_s.start_with?("docker/setup-qemu-action") }
-
-    expect(qemu["if"]).to eq("env.DEPLOY_ARCH == 'arm64'")
+  it "builds on a runner with the architecture of the server instead of emulating it" do
+    expect(jobs["staging"]["runs-on"]).to eq("${{ vars.STAGING_DEPLOY_ARCH == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}")
+    expect(jobs["production"]["runs-on"]).to eq("${{ vars.DEPLOY_ARCH == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}")
+    expect(action.dig("runs", "steps").map { |step| step["uses"].to_s }).not_to include(a_string_starting_with("docker/setup-qemu-action"))
   end
 
   it "installs Docker for the deploy user and opens the HTTP ports on the server" do
