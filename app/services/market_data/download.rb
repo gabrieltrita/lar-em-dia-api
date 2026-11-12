@@ -4,7 +4,7 @@ module MarketData
     MAX_BYTES = 30.megabytes
     MAX_ENTRY_BYTES = 100.megabytes
     FETCH_ERRORS = [
-      Unavailable, SocketError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout, OpenSSL::SSL::SSLError, Zip::Error
+      Unavailable, SocketError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout, OpenSSL::SSL::SSLError, Zip::Error, JSON::ParserError
     ].freeze
 
     def self.zip_entries(uri, names)
@@ -15,8 +15,19 @@ module MarketData
       new(uri).zip_lines(name, &)
     end
 
+    def self.json(uri)
+      new(uri).json
+    end
+
     def initialize(uri)
       @uri = uri
+    end
+
+    def json
+      body = fetch
+      body && JSON.parse(body)
+    rescue *FETCH_ERRORS => e
+      fail_with(e)
     end
 
     def zip_entries(names)

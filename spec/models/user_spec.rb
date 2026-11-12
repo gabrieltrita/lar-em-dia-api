@@ -217,6 +217,19 @@ RSpec.describe User do
       expect(Entry.exists?(entry.id)).to be(false)
       expect(InvestmentTransaction.exists?(other.id)).to be(true)
     end
+
+    it "deletes the emergency reserve and the entries it created" do
+      entry = create(:entry, user: user)
+      movement = create(:reserve_movement, user: user, entry: entry)
+      other = create(:reserve_movement)
+
+      user.anonymize!
+
+      expect(ReserveAccount.exists?(movement.account_id)).to be(false)
+      expect(ReserveMovement.exists?(movement.id)).to be(false)
+      expect(Entry.exists?(entry.id)).to be(false)
+      expect(ReserveMovement.exists?(other.id)).to be(true)
+    end
   end
 
   describe "2FA" do

@@ -32,7 +32,9 @@ class AdminMetrics
       entries_created_30d: Entry.where(created_at: since..).count,
       with_portfolio: people.where(id: InvestmentPosition.select(:user_id)).count,
       investment_transactions_30d: InvestmentTransaction.where(created_at: since..).count,
-      positions_by_goal: InvestmentPosition.goals.keys.index_with(0).merge(InvestmentPosition.group(:goal).count)
+      positions_by_goal: InvestmentPosition.goals.keys.index_with(0).merge(InvestmentPosition.group(:goal).count),
+      with_reserve: people.where(id: ReserveAccount.select(:user_id)).count,
+      reserve_accounts_by_kind: ReserveAccount.kinds.keys.index_with(0).merge(ReserveAccount.group(:kind).count)
     }
   end
 

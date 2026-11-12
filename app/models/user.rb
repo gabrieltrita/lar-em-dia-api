@@ -9,7 +9,7 @@ class User < ApplicationRecord
   BASE_LOCK_DURATION = 15.minutes
   MAX_LOCK_DURATION = 24.hours
 
-  PERSONAL_DATA = %i[identities balances entries entry_series investment_transactions investment_positions].freeze
+  PERSONAL_DATA = %i[identities balances entries entry_series investment_transactions investment_positions reserve_accounts reserve_movements].freeze
 
   DEFAULT_TIME_ZONE = "America/Sao_Paulo"
   TIME_ZONES = TZInfo::Timezone.all_identifiers.to_set.freeze
@@ -24,6 +24,8 @@ class User < ApplicationRecord
   has_many :entry_series, class_name: "EntrySeries", dependent: :destroy
   has_many :investment_transactions, dependent: :destroy
   has_many :investment_positions, dependent: :destroy
+  has_many :reserve_accounts, dependent: :destroy
+  has_many :reserve_movements, dependent: :destroy
 
   encrypts :email, deterministic: true, downcase: true
   encrypts :first_name, :last_name, :phone, :unconfirmed_email, :otp_secret
@@ -56,6 +58,8 @@ class User < ApplicationRecord
   validates :last_name, length: { maximum: 100 }
   validates :phone, length: { maximum: 20 }
   validates :time_zone, inclusion: { in: TIME_ZONES }
+  validates :reserve_goal_months, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 24 }
+  validates :reserve_goal_cents, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: Entry::MAX_AMOUNT_CENTS }, allow_nil: true
   validates :password, length: { minimum: 8, maximum: 72 }, format: { with: PASSWORD_FORMAT, message: :weak_password }, if: -> { password.present? }
 
   validates :password, confirmation: true, allow_blank: true
