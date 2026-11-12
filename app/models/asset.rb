@@ -7,6 +7,9 @@ class Asset < ApplicationRecord
 
   has_many :quotes, class_name: "AssetQuote", dependent: :destroy, inverse_of: :asset
   has_one :latest_quote, -> { order(quoted_on: :desc) }, class_name: "AssetQuote", inverse_of: :asset
+  has_many :distributions, class_name: "AssetDistribution", dependent: :destroy, inverse_of: :asset
+  has_many :fund_reports, dependent: :destroy
+  has_one :latest_fund_report, -> { order(reference_month: :desc) }, class_name: "FundReport", inverse_of: :asset
 
   enum :asset_type, { fii: "fii", stock: "stock" }, validate: true
 

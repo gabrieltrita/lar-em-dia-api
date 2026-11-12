@@ -6,5 +6,6 @@ class AssetBlueprint < Blueprinter::Base
   view :detail do
     fields :isin, :cnpj, :active
     association :latest_quote, name: :quote, blueprint: AssetQuoteBlueprint
+    association :latest_fund_report, name: :fund_report, blueprint: FundReportBlueprint
   end
 end

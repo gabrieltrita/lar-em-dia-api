@@ -1,7 +1,8 @@
 require "rails_helper"
 
 RSpec.describe "Assets", type: :request do
-  let(:headers) { auth_headers(create(:user)) }
+  let(:user) { create(:user) }
+  let(:headers) { auth_headers(user) }
 
   it "requires authentication" do
     get "/api/v1/assets"
@@ -52,7 +53,31 @@ RSpec.describe "Assets", type: :request do
 
     get "/api/v1/assets/OIBR3", headers: headers
 
-    expect(json["data"]).to include("active" => false, "quote" => nil)
+    expect(json["data"]).to include("active" => false, "quote" => nil, "fund_report" => nil, "distributions" => [])
+  end
+
+  it "shows an FII's latest report and the distributions of the last 24 months, with the user's own records" do
+    fund = create(:asset, :fii, ticker: "HGLG11")
+    create(:fund_report, asset: fund, reference_month: Date.new(2026, 8, 1))
+    create(:fund_report, asset: fund, reference_month: Date.new(2026, 9, 1), shareholders_count: 613_837)
+    create(:asset_distribution, asset: fund, record_on: Date.new(2026, 9, 30), amount_per_share_e8: 116_691_920)
+    create(:asset_distribution, asset: fund, record_on: Date.new(2024, 9, 30))
+    stock = create(:asset, ticker: "PETR4")
+    mine = create(:asset_distribution, :manual, user: user, asset: stock, kind: :jcp, record_on: Date.new(2026, 8, 20), amount_per_share_e8: 100_000_000)
+    create(:asset_distribution, :manual, asset: stock)
+
+    travel_to(Time.zone.local(2026, 11, 12, 12)) do
+      get "/api/v1/assets/HGLG11", headers: headers
+      expect(json.dig("data", "fund_report")).to include("reference_month" => "2026-09", "shareholders_count" => 613_837)
+      expect(json.dig("data", "distributions")).to contain_exactly(
+        a_hash_including("kind" => "fii_income", "source" => "cvm", "record_on" => "2026-09-30", "paid_on" => nil, "amount_per_share_e8" => 116_691_920)
+      )
+
+      get "/api/v1/assets/PETR4", headers: headers
+    end
+
+    expect(json.dig("data", "distributions")).to eq([ AssetDistributionBlueprint.render_as_hash(mine).as_json ])
+    expect(json.dig("data", "distributions", 0, "net_amount_per_share_e8")).to eq(85_000_000)
   end
 
   it "answers 404 for an unknown ticker" do

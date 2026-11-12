@@ -26,6 +26,19 @@ RSpec.describe MarketDataSyncJob do
     expect(Asset.find_by!(ticker: "PETR4")).to have_attributes(name: "PETROLEO BRASILEIRO S.A. PETROBRAS", sector: "Petróleo e Gás")
   end
 
+  it "imports the FII monthly reports and their income with the registry" do
+    stub_b3_quotes
+    stub_cvm_registry
+
+    described_class.perform_now("2026-11-11", with_registry: true)
+
+    hglg = Asset.find_by!(ticker: "HGLG11")
+    expect(hglg.latest_fund_report).to have_attributes(reference_month: Date.new(2026, 9, 1), shareholders_count: 613_837)
+    expect(hglg.distributions.find_by!(record_on: Date.new(2026, 1, 31))).to have_attributes(kind: "fii_income", source: "cvm",
+      paid_on: nil, amount_per_share_e8: 109_896_433)
+    expect(Rails.logger).to have_received(:info).with(hash_including(status: "synced", fund_reports_saved: 14, distributions_saved: 14))
+  end
+
   it "refreshes the CVM registry with Monday's quotes" do
     cotahist = Zip::File.open_buffer(StringIO.new(market_data_file("COTAHIST_D11112026.ZIP"))).read("COTAHIST_D11112026.TXT")
     stub_request(:get, "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D09112026.ZIP")

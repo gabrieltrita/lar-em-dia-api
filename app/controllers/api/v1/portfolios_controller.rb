@@ -14,6 +14,19 @@ module Api
         render json: { data: PortfolioHistory.new(user: current_user).months }
       end
 
+      def income
+        months = params[:months].blank? ? DistributionIncome::DEFAULT_MONTHS : Integer(params[:months].to_s, 10, exception: false)
+        unless DistributionIncome::MONTHS_RANGE.cover?(months)
+          return render_error(status: :bad_request, code: "invalid_months", message: "months must be an integer from 1 to 60")
+        end
+
+        income = DistributionIncome.new(user: current_user)
+        render json: {
+          data: { monthly_average_cents: income.monthly_average_cents, received: income.received, forecast: income.forecast(months),
+                  positions: income.positions }
+        }
+      end
+
       private
 
       def position_json(item)

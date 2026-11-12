@@ -61,6 +61,7 @@ RSpec.describe "LGPD: consents and data export", type: :request do
       series = create(:entry_series, user: user)
       transaction = create(:investment_transaction, user: user)
       movement = create(:reserve_movement, user: user)
+      distribution = create(:asset_distribution, :manual, user: user)
       create(:identity)
 
       get "/api/v1/me/export", headers: auth_headers(user)
@@ -71,6 +72,7 @@ RSpec.describe "LGPD: consents and data export", type: :request do
       expect(json.dig("content", "investment_transactions")).to eq([ InvestmentTransactionBlueprint.render_as_hash(transaction).as_json ])
       expect(json.dig("content", "investment_positions", 0)).to include("ticker" => transaction.position.ticker, "goal" => "growth")
       expect(json.dig("content", "reserve_movements")).to eq([ ReserveMovementBlueprint.render_as_hash(movement).as_json ])
+      expect(json.dig("content", "asset_distributions")).to eq([ AssetDistributionBlueprint.render_as_hash(distribution).as_json ])
       expect(json.dig("content", "reserve_accounts", 0)).to include("name" => movement.account.name, "kind" => "selic_treasury")
     end
   end
