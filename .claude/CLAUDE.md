@@ -30,7 +30,8 @@ Families record their current or past balance, past and future income and expens
 - **Admin categories** (`/admin/categories`, no delete): `key` and `kind` are immutable (`immutable`) because clients translate by `key` and show `name` for unknown keys.
 - **Money** is integer cents (`amount_cents`, bigint), never floats.
 - **Privacy**: every financial record is personal data (`User::PERSONAL_DATA`). Free text (`Entry#description`) is encrypted; amounts and dates stay in clear so projections can filter and sum in SQL (owner decision, 2026-11-03). Admins never read users' entries or balances; admin features use account data and aggregated metrics only.
-- **Out of the MVP**: shared family budgets (multiple members), investment projections, bank integration, statement import.
+- **Investments catalog** (wave 7, `GET /assets`, `GET /assets/:ticker`): `Asset` (global, no personal data: `ticker`, `isin`, `name`, `asset_type` stock/fii, `cnpj` digits only, `sector`, `active`) and `AssetQuote` (one per trading day, `close_cents`, `volume_cents`, `trades_count`). `MarketDataSyncJob` (7h São Paulo, Tuesday to Saturday) imports the previous weekday from B3's COTAHIST (`MarketData::B3Quotes`) and, with Monday's quotes or `with_registry: true`, the CVM registry (`MarketData::CvmFunds` by ISIN, `MarketData::CvmCompanies` by ticker), all through `MarketData::Download` (short timeouts, size limits, `MarketData::Unavailable`). CVM data is ODbL: the app cites the source. Per-share values with more than two decimals (distributions, book value per share) are integers in `_e8` (hundred-millionths of a real); totals are rounded to cents once. Specs use small real extracts in `spec/fixtures/files/market_data/` and `MarketDataHelpers`.
+- **Out of the MVP**: shared family budgets (multiple members), bank integration, statement import.
 
 Delivery waves: 0 base (rename, example removal, Flutter skeleton); 1 login, balance, income; 2 expenses with single edit/delete, fixed/variable, projection; 3 recurrence, accumulated savings, admin user management (family pilot); 4 installments, negative-month alert, admin metrics; 5 what-if simulation, due-date alerts, default categories; 6 series edit/delete, mark as paid.
 
@@ -49,10 +50,11 @@ app/controllers/api/v1/me/     sessions, two_factor, consents, identities
 app/controllers/api/v1/admin/  base (admin + 2FA required), users, audit_logs
 app/controllers/docs_controller.rb   Swagger UI at /docs (non-production or ENABLE_API_DOCS=true)
 app/controllers/health_controller.rb GET /health (readiness, public); checks in app/services/health_check.rb
-app/jobs/                  MaintenanceCleanupJob (daily), DueAlertsJob (hourly, emails due-date alerts at 8h local time; README feature 20), both in config/schedule.yml
+app/jobs/                  MaintenanceCleanupJob (daily), DueAlertsJob (hourly, emails due-date alerts at 8h local time; README feature 20), MarketDataSyncJob (B3 quotes and CVM registry; README feature 21), all in config/schedule.yml
+app/services/market_data/  Download, B3Quotes, CvmFunds, CvmCompanies, CvmCsv, CatalogSync, Unavailable
 app/mailers/due_alert_mailer.rb upcoming (bills due in the user's chosen days, with an unsubscribe link)
 app/mailers/user_mailer.rb confirmation, registration_attempt, welcome, password_reset, password_changed, email_change_confirmation, email_change_requested, account_locked, account_deactivated, account_reactivated, two_factor_disabled
-app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry, EntrySeries
+app/models/                User (+ concerns/two_factor_authenticatable), RefreshToken, AuditLog, Consent, Identity, Current, Category, Balance, Entry, EntrySeries, Asset, AssetQuote
 app/controllers/api/v1/categories_controller.rb, balances_controller.rb, entries_controller.rb, entry_series_controller.rb, projections_controller.rb  Lar em Dia domain (README feature 19)
 app/services/projection.rb month by month projection (SQL sums grouped by month, kind and nature) and accumulated savings; `extra_entries:` adds unsaved entries for the what-if simulation (`app/services/projection_simulation.rb`, `POST /projection/simulation`)
 app/services/entry_series_creator.rb  recurring series: one entry per month, forwards or backwards

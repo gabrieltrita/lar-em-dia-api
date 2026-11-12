@@ -30,6 +30,9 @@ gem "pagy", "~> 43.8"
 
 gem "blueprinter", "~> 1.1"
 
+gem "csv", "~> 3.3"
+gem "rubyzip", "~> 3.2", require: "zip"
+
 gem "lograge", "~> 0.15"
 
 group :development, :test do

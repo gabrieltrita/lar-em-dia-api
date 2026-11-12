@@ -9,3 +9,9 @@ due_alerts:
   class: "DueAlertsJob"
   queue: default
   description: "Emails due-date alerts to users at 8h in their own time zone"
+
+market_data_sync:
+  cron: "0 7 * * 2-6 America/Sao_Paulo"
+  class: "MarketDataSyncJob"
+  queue: default
+  description: "Imports the previous trading day's closing quotes of stocks and FIIs from B3"

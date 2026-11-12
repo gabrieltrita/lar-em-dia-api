@@ -10,10 +10,37 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "asset_quotes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "asset_id", null: false
+    t.date "quoted_on", null: false
+    t.bigint "close_cents", null: false
+    t.bigint "volume_cents", null: false
+    t.integer "trades_count", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id", "quoted_on"], name: "index_asset_quotes_on_asset_id_and_quoted_on", unique: true
+  end
+
+  create_table "assets", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "ticker", null: false
+    t.string "isin", null: false
+    t.string "name", null: false
+    t.string "asset_type", null: false
+    t.string "cnpj"
+    t.string "sector"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_type", "active"], name: "index_assets_on_asset_type_and_active"
+    t.index ["cnpj"], name: "index_assets_on_cnpj"
+    t.index ["isin"], name: "index_assets_on_isin"
+    t.index ["ticker"], name: "index_assets_on_ticker", unique: true
+  end
 
   create_table "audit_logs", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "actor_id"
@@ -160,6 +187,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000000) do
     t.index ["role"], name: "index_users_on_role"
   end
 
+  add_foreign_key "asset_quotes", "assets"
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "balances", "users"
   add_foreign_key "consents", "users", on_delete: :cascade
