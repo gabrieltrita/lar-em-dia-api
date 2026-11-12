@@ -517,3 +517,22 @@ GET /assets/PETR4   -> ticker, name, asset_type, sector, isin, cnpj, active, quo
 - `MarketDataSyncJob` runs at 7h (São Paulo), Tuesday to Saturday (`config/schedule.yml`), and imports the previous weekday's closing quotes from B3's daily COTAHIST file (`MarketData::B3Quotes`). A day without a file (a holiday) is only logged. With Monday's quotes, or when run as `MarketDataSyncJob.perform_later("2026-11-11", with_registry: true)`, it also reads the CVM registry of the current and previous year: the FII monthly report (`MarketData::CvmFunds`, matched by ISIN: CNPJ, name and segment) and the listed companies' FCA (`MarketData::CvmCompanies`, matched by ticker: CNPJ, name and sector). Assets without a quote in the last 30 days become inactive and leave `GET /assets`, but `GET /assets/:ticker` still shows them.
 - Downloads (`MarketData::Download`) use 10-second timeouts and size limits, and any failure raises `MarketData::Unavailable`, which retries the job in an hour (3 attempts). Logs carry only counts, the host and the exception class.
 - Sources: [B3 historical quotes](https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/historico/mercado-a-vista/cotacoes-historicas/) (end-of-day and historical quotes may be redistributed free of charge, B3 Market Data Commercial Policy, items 7.9 and 7.10) and [CVM open data](https://dados.cvm.gov.br/) under the Open Database License (ODbL), which requires citing CVM as the source in the app.
+
+### 22. Investments portfolio (Lar em Dia)
+
+```http
+POST   /investment_transactions { "ticker": "PETR4", "kind": "buy", "traded_on": "2026-10-01", "quantity": 100, "price_cents": 3000, "fees_cents": 50, "debit_balance": true }
+GET    /investment_transactions?ticker=PETR4&from=2026-01-01&to=2026-12-31
+PATCH  /investment_transactions/:id            DELETE /investment_transactions/:id
+PATCH  /investment_positions/PETR4 { "goal": "income" }
+GET    /portfolio?goal=growth&include_closed=true
+GET    /portfolio/history                      -> [{ "month": "2026-11", "contributed_cents", "market_value_cents" }]
+```
+
+- A portfolio is a list of transactions (`InvestmentTransaction`: `buy`, `sell`, `split`, `reverse_split`, `bonus`) grouped in one `InvestmentPosition` per asset, which only stores the goal (`income` or `growth`; FIIs start with `income` and stocks with `growth`, unless the first transaction sends `goal`). Quantity, cost, average price and realized profit are always recomputed by `PositionLedger`: the average price is weighted and includes fees, a sale removes shares at the average price, and splits, reverse splits and bonuses send the shares added or removed without changing the cost. Average prices are integers in `_e8` (hundred-millionths of a real).
+- No transaction may leave the position below zero shares on any day: creating or editing answers `validation_failed` with `insufficient_quantity` on `quantity`, and deleting a buy that a later sale needs answers `insufficient_quantity` (422). An unknown ticker answers `unknown_asset` on `ticker`, and the ticker of a saved transaction is `immutable`.
+- `debit_balance: true` creates a paid entry on the trade date: an expense in `investment_contribution` for a buy (shares × price + fees) and an income in `investment_redemption` for a sale (shares × price − fees), so the projection counts the cash. Editing the transaction updates it, `debit_balance: false` deletes it, and deleting the entry in the entries screen keeps the transaction.
+- `GET /portfolio` values each position at the latest close (`AssetQuote`), or at cost without a quote. `GET /portfolio/history` values the shares held at each month end at the last close up to that day, for at most the last 120 months.
+- Month-end quotes before the daily job started come from `bin/rails market_data:backfill[2019]` (`MarketData::Backfill`), which reads B3's monthly COTAHIST files line by line, keeps each asset's last quote of the month and creates delisted assets as inactive. It is idempotent; in production run it once with `bin/kamal app exec 'bin/rails market_data:backfill[2019]'` (about 15 seconds per month).
+- Transactions and positions are personal data (`User::PERSONAL_DATA`): exported under `content` and destroyed by `anonymize!`. Admin metrics only count users with a portfolio, transactions in the last 30 days and positions by goal.
+- The API only records and computes from the user's own data; it never recommends assets. Clients show a notice that the numbers are informational and not investment advice.

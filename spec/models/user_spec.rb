@@ -204,6 +204,19 @@ RSpec.describe User do
       expect(user.identities).to be_empty
       expect(Identity.exists?(other.id)).to be(true)
     end
+
+    it "deletes the portfolio and the entries it created" do
+      entry = create(:entry, user: user)
+      transaction = create(:investment_transaction, user: user, entry: entry)
+      other = create(:investment_transaction)
+
+      user.anonymize!
+
+      expect(InvestmentTransaction.exists?(transaction.id)).to be(false)
+      expect(InvestmentPosition.exists?(transaction.position_id)).to be(false)
+      expect(Entry.exists?(entry.id)).to be(false)
+      expect(InvestmentTransaction.exists?(other.id)).to be(true)
+    end
   end
 
   describe "2FA" do

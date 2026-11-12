@@ -7,7 +7,7 @@ module MarketData
     end
 
     def initialize(quotes, funds, companies)
-      @quotes = quotes.select { |quote| valid?(quote) }
+      @quotes = quotes.select(&:catalogable?)
       @received = quotes.size
       @funds = funds
       @companies = companies
@@ -28,11 +28,6 @@ module MarketData
     end
 
     private
-
-    def valid?(quote)
-      quote.ticker.match?(Asset::TICKER_FORMAT) && quote.isin.match?(Asset::ISIN_FORMAT) && quote.name.present? &&
-        quote.close_cents.positive?
-    end
 
     def save_quotes
       return if @quotes.empty?

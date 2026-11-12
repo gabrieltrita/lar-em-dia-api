@@ -29,7 +29,10 @@ class AdminMetrics
       with_balance: people.where(id: Balance.select(:user_id)).count,
       with_entries: people.where(id: Entry.select(:user_id)).count,
       with_5_series: people.where(id: EntrySeries.group(:user_id).having("count(*) >= ?", ENGAGED_SERIES).select(:user_id)).count,
-      entries_created_30d: Entry.where(created_at: since..).count
+      entries_created_30d: Entry.where(created_at: since..).count,
+      with_portfolio: people.where(id: InvestmentPosition.select(:user_id)).count,
+      investment_transactions_30d: InvestmentTransaction.where(created_at: since..).count,
+      positions_by_goal: InvestmentPosition.goals.keys.index_with(0).merge(InvestmentPosition.group(:goal).count)
     }
   end
 

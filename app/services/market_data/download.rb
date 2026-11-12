@@ -11,6 +11,10 @@ module MarketData
       new(uri).zip_entries(names)
     end
 
+    def self.zip_lines(uri, name, &)
+      new(uri).zip_lines(name, &)
+    end
+
     def initialize(uri)
       @uri = uri
     end
@@ -19,8 +23,14 @@ module MarketData
       body = fetch
       body && extract(body, names)
     rescue *FETCH_ERRORS => e
-      Rails.logger.warn({ message: "Market data download failed", host: @uri.host, error: e.class.name })
-      raise Unavailable
+      fail_with(e)
+    end
+
+    def zip_lines(name, &)
+      body = fetch
+      body && each_line(Zip::File.open_buffer(StringIO.new(body)).find_entry(name), &)
+    rescue *FETCH_ERRORS => e
+      fail_with(e)
     end
 
     private
@@ -51,11 +61,33 @@ module MarketData
     end
 
     def read_entry(entry)
-      raise Unavailable if entry.nil? || entry.size > MAX_ENTRY_BYTES
-
+      check_entry(entry)
       entry.get_input_stream { |stream| stream.read(MAX_ENTRY_BYTES + 1) }.tap do |content|
         raise Unavailable if content.bytesize > MAX_ENTRY_BYTES
       end
+    end
+
+    def each_line(entry)
+      check_entry(entry)
+      read = 0
+      entry.get_input_stream do |stream|
+        stream.each_line do |line|
+          read += line.bytesize
+          raise Unavailable if read > MAX_ENTRY_BYTES
+
+          yield line
+        end
+      end
+      true
+    end
+
+    def check_entry(entry)
+      raise Unavailable if entry.nil? || entry.size > MAX_ENTRY_BYTES
+    end
+
+    def fail_with(error)
+      Rails.logger.warn({ message: "Market data download failed", host: @uri.host, error: error.class.name })
+      raise Unavailable
     end
   end
 end
