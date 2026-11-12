@@ -39,3 +39,19 @@ en:
               inactive: "is no longer available"
             nature:
               only_for_expenses: "can only be set on expenses"
+        reserve_account:
+          attributes:
+            cdi_percent_bps:
+              rate_required: "is required for a CDB"
+              rate_not_allowed: "can only be set on a CDB"
+            annual_rate_bps:
+              rate_required: "is required for a fixed rate account"
+              rate_not_allowed: "can only be set on a fixed rate account"
+        reserve_movement:
+          attributes:
+            debit_balance:
+              anchor_not_allowed: "cannot be set on a balance anchor"
+            amount_cents:
+              insufficient_reserve: "is more than the account holds on that date"
+            moved_on:
+              in_future: "cannot be in the future"

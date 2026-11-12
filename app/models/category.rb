@@ -13,7 +13,8 @@ class Category < ApplicationRecord
       tax_refund: "Tax refund",
       reimbursement: "Reimbursement",
       other_income: "Other income",
-      investment_redemption: "Investment redemption"
+      investment_redemption: "Investment redemption",
+      reserve_withdrawal: "Emergency reserve withdrawal"
     },
     expense: {
       housing: "Housing",
@@ -36,7 +37,8 @@ class Category < ApplicationRecord
       gifts_donations: "Gifts and donations",
       taxes_fees: "Taxes and fees",
       other_expense: "Other expense",
-      investment_contribution: "Investment contribution"
+      investment_contribution: "Investment contribution",
+      reserve_deposit: "Emergency reserve deposit"
     }
   }.freeze
 

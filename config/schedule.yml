@@ -15,3 +15,9 @@ market_data_sync:
   class: "MarketDataSyncJob"
   queue: default
   description: "Imports the previous trading day's closing quotes of stocks and FIIs from B3"
+
+interest_rate_sync:
+  cron: "0 8 * * 2-6 America/Sao_Paulo"
+  class: "InterestRateSyncJob"
+  queue: default
+  description: "Imports the Selic, CDI, savings and Selic target rates of the last 15 days from the Central Bank"

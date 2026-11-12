@@ -13,6 +13,7 @@ class Projection
     @extra_entries = extra_entries
     @from = from.beginning_of_month
     @anchor = user.balances.recent.first
+    @reserve = ReserveProjection.new(user)
     @months = months == ALL_MONTHS ? months_until_last_entry : months
   end
 
@@ -54,6 +55,7 @@ class Projection
       closing_cents: closing,
       savings_cents: closing - start,
       negative: closing.negative?,
+      reserve_cents: @reserve.net_cents_on(month.end_of_month),
       expense_by_category: expense_by_category(month)
     }
   end

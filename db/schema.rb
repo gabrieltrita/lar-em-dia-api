@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_12_101000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_003000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -136,6 +136,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_101000) do
     t.index ["user_id", "provider"], name: "index_identities_on_user_id_and_provider", unique: true
   end
 
+  create_table "interest_rates", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "series", null: false
+    t.date "rate_on", null: false
+    t.bigint "rate_e8", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["series", "rate_on"], name: "index_interest_rates_on_series_and_rate_on", unique: true
+  end
+
   create_table "investment_positions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
     t.uuid "asset_id", null: false
@@ -181,6 +190,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_101000) do
     t.index ["user_id"], name: "index_refresh_tokens_on_user_id"
   end
 
+  create_table "reserve_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.text "name", null: false
+    t.string "kind", null: false
+    t.integer "cdi_percent_bps"
+    t.integer "annual_rate_bps"
+    t.boolean "tax_exempt", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_reserve_accounts_on_user_id"
+  end
+
+  create_table "reserve_movements", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "account_id", null: false
+    t.uuid "entry_id"
+    t.string "kind", null: false
+    t.date "moved_on", null: false
+    t.bigint "amount_cents", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "moved_on"], name: "index_reserve_movements_on_account_id_and_moved_on"
+    t.index ["entry_id"], name: "index_reserve_movements_on_entry_id", unique: true
+    t.index ["user_id", "moved_on"], name: "index_reserve_movements_on_user_id_and_moved_on"
+  end
+
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.text "email", null: false
     t.text "first_name", null: false
@@ -207,6 +242,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_101000) do
     t.boolean "due_alerts_enabled", default: true, null: false
     t.integer "due_alert_days_before", default: 1, null: false
     t.date "due_alerts_sent_on"
+    t.integer "reserve_goal_months", default: 6, null: false
+    t.bigint "reserve_goal_cents"
     t.index ["anonymized_at"], name: "index_users_on_anonymized_at"
     t.index ["confirmed_at"], name: "index_users_on_confirmed_at"
     t.index ["email"], name: "index_users_on_email", unique: true
@@ -228,4 +265,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_101000) do
   add_foreign_key "investment_transactions", "investment_positions", column: "position_id"
   add_foreign_key "investment_transactions", "users"
   add_foreign_key "refresh_tokens", "users", on_delete: :cascade
+  add_foreign_key "reserve_accounts", "users"
+  add_foreign_key "reserve_movements", "entries", on_delete: :nullify
+  add_foreign_key "reserve_movements", "reserve_accounts", column: "account_id", on_delete: :cascade
+  add_foreign_key "reserve_movements", "users"
 end
