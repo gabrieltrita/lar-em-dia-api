@@ -10,10 +10,25 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_003000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_005000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "asset_distributions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "asset_id", null: false
+    t.uuid "user_id"
+    t.string "kind", null: false
+    t.string "source", null: false
+    t.date "record_on", null: false
+    t.date "paid_on"
+    t.bigint "amount_per_share_e8", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id", "kind", "record_on"], name: "index_asset_distributions_on_cvm_record", unique: true, where: "((source)::text = 'cvm'::text)"
+    t.index ["asset_id", "record_on"], name: "index_asset_distributions_on_asset_id_and_record_on"
+    t.index ["user_id", "record_on"], name: "index_asset_distributions_on_user_id_and_record_on"
+  end
 
   create_table "asset_quotes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "asset_id", null: false
@@ -123,6 +138,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_003000) do
     t.bigint "total_cents"
     t.integer "interval_months", default: 1, null: false
     t.index ["user_id"], name: "index_entry_series_on_user_id"
+  end
+
+  create_table "fund_reports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "asset_id", null: false
+    t.date "reference_month", null: false
+    t.bigint "equity_cents", null: false
+    t.bigint "book_value_per_share_e8", null: false
+    t.bigint "shares_count", null: false
+    t.integer "shareholders_count", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id", "reference_month"], name: "index_fund_reports_on_asset_id_and_reference_month", unique: true
   end
 
   create_table "identities", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -250,6 +277,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_003000) do
     t.index ["role"], name: "index_users_on_role"
   end
 
+  add_foreign_key "asset_distributions", "assets"
+  add_foreign_key "asset_distributions", "users"
   add_foreign_key "asset_quotes", "assets"
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "balances", "users"
@@ -258,6 +287,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_003000) do
   add_foreign_key "entries", "entry_series", column: "series_id"
   add_foreign_key "entries", "users"
   add_foreign_key "entry_series", "users"
+  add_foreign_key "fund_reports", "assets"
   add_foreign_key "identities", "users"
   add_foreign_key "investment_positions", "assets"
   add_foreign_key "investment_positions", "users"

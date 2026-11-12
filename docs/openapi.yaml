@@ -68,7 +68,9 @@ info:
     `greater_than_or_equal_to`, `less_than_or_equal_to` (series `entries_count` and `total_cents`, and amounts above
     100,000,000,000.00 or a balance below its negative) and `present` (series `entries_count` and `total_cents`), and
     `immutable` (a category's `key` or `kind` after it is created, or an investment transaction's `ticker`),
-    `unknown_asset` (a `ticker` that is not in the catalog), `insufficient_quantity` (a transaction that would leave the
+    `unknown_asset` (a `ticker` that is not in the catalog, or a distribution's `ticker` without a position),
+    `stock_only` (a distribution recorded by hand on an FII), `before_record_on` (a distribution paid before its record
+    date), `insufficient_quantity` (a transaction that would leave the
     position below zero shares on some day) and `only_for_trades` (`price_cents`, `fees_cents` or `debit_balance` on a
     split, reverse split or bonus), `rate_required` and `rate_not_allowed` (a reserve account's `cdi_percent_bps` or
     `annual_rate_bps` missing for its kind, or sent to a kind that does not use it), `insufficient_reserve` (a
@@ -1168,9 +1170,15 @@ paths:
       description: |
         The anchor is the most recent balance; without one it is zero and `anchor` is null. A month closes at the anchor
         plus income minus expenses due between the anchor date and the month's last day (worked backwards for months
-        before the anchor). Pending and paid entries both count, by due date.
+        before the anchor). Pending and paid entries both count, by due date. Unless `include_investment_income` is
+        `false`, the months after the current one also count the portfolio's forecast distributions as income (without
+        creating entries). Each month also carries the portfolio value and the total net worth.
       parameters:
         - { name: from, in: query, description: First month; defaults to the current month, schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" } }
+        - name: include_investment_income
+          in: query
+          description: Add the forecast distributions of the portfolio, as in `GET /portfolio/income`, to the income of the months after the current one
+          schema: { type: boolean, default: true }
         - name: months
           in: query
           description: Number of months, or `all` to project through the month of the user's last entry (at least 1 and at most 60 months)
@@ -1423,6 +1431,113 @@ paths:
                         month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
                         contributed_cents: { type: integer, description: Buys with fees minus sale proceeds net of fees, up to the month }
                         market_value_cents: { type: integer }
+  /portfolio/income:
+    get:
+      tags: [Investments]
+      summary: Distributions received and forecast for the current user's portfolio
+      description: |
+        A distribution counts in the month it is paid (FIIs from the CVM monthly report have no payment date and count
+        in the month after the record date) for the shares held on the record date. JCP counts net of the 15% income
+        tax. `received` covers the last 12 months, the current one included. Each month of `forecast` (after the
+        current one) uses the distributions already announced for it or, without them, the average of the last 12
+        months per share times the shares held today. Totals are rounded to cents once per month. Informational only,
+        never investment advice.
+      parameters:
+        - { name: months, in: query, description: Months of forecast, schema: { type: integer, minimum: 1, maximum: 60, default: 12 } }
+      responses:
+        "200":
+          description: Passive income
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [monthly_average_cents, received, forecast, positions]
+                    properties:
+                      monthly_average_cents: { type: integer, minimum: 0, description: Received in the last 12 months divided by 12 }
+                      received:
+                        type: array
+                        items: { $ref: "#/components/schemas/IncomeMonth" }
+                      forecast:
+                        type: array
+                        items: { $ref: "#/components/schemas/IncomeMonth" }
+                      positions:
+                        type: array
+                        items:
+                          type: object
+                          required: [ticker, goal, quantity, received_12m_cents, monthly_forecast_cents]
+                          properties:
+                            ticker: { type: string }
+                            goal: { type: string, enum: [income, growth] }
+                            quantity: { type: integer, minimum: 0 }
+                            received_12m_cents: { type: integer, minimum: 0 }
+                            monthly_forecast_cents: { type: integer, minimum: 0, description: Average of the last 12 months per share times the shares held today }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /asset_distributions:
+    get:
+      tags: [Investments]
+      summary: List the distributions the current user recorded by hand, newest first
+      parameters:
+        - { name: ticker, in: query, schema: { type: string }, example: PETR4 }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of distributions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AssetDistribution" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+    post:
+      tags: [Investments]
+      summary: Record a stock dividend or JCP by hand
+      description: |
+        There is no free official source of stock distributions, so the user records the ones they receive. Only
+        stocks of the user's portfolio accept them (FII income comes from CVM), and they count only for that user.
+        `amount_per_share_e8` is the gross value per share; JCP is shown and counted net of the 15% income tax.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssetDistributionInput" }
+      responses:
+        "201": { $ref: "#/components/responses/AssetDistribution" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /asset_distributions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Investments]
+      summary: Update a distribution recorded by hand
+      description: The `ticker` cannot change (`immutable`). Another user's record answers 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssetDistributionInput" }
+      responses:
+        "200": { $ref: "#/components/responses/AssetDistribution" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Investments]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/AssetDistribution" }
+    delete:
+      tags: [Investments]
+      summary: Delete a distribution recorded by hand
+      responses:
+        "200": { $ref: "#/components/responses/DeletedId" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reserve_accounts:
     get:
       tags: [Reserve]
@@ -1677,8 +1792,12 @@ paths:
   /assets/{ticker}:
     get:
       tags: [Assets]
-      summary: Show an asset with its latest quote
-      description: Inactive assets are shown too, so a position in a delisted asset can still be opened.
+      summary: Show an asset with its latest quote, FII report and distributions
+      description: |
+        Inactive assets are shown too, so a position in a delisted asset can still be opened. `distributions` lists the
+        last 24 months by record date, newest first: FII income from the CVM monthly report (the month's dividend yield
+        times the book value per share, with the record date on the month's last day and no payment date) and the
+        stock distributions the current user recorded by hand.
       parameters:
         - { name: ticker, in: path, required: true, description: Case insensitive, schema: { type: string }, example: PETR4 }
       responses:
@@ -2137,8 +2256,16 @@ components:
       allOf:
         - $ref: "#/components/schemas/Asset"
         - type: object
-          required: [isin, cnpj, active, quote]
+          required: [isin, cnpj, active, quote, fund_report, distributions]
           properties:
+            fund_report:
+              description: Latest CVM monthly report; FIIs only
+              oneOf:
+                - { $ref: "#/components/schemas/FundReport" }
+                - { type: "null" }
+            distributions:
+              type: array
+              items: { $ref: "#/components/schemas/AssetDistribution" }
             isin: { type: string, example: BRPETRACNPR6 }
             cnpj: { type: [string, "null"], pattern: "^[0-9]{14}$", description: "Digits only; null until matched with CVM" }
             active: { type: boolean, description: Has a quote in the last 30 days }
@@ -2146,6 +2273,43 @@ components:
               oneOf:
                 - { $ref: "#/components/schemas/AssetQuote" }
                 - { type: "null" }
+    FundReport:
+      type: object
+      required: [reference_month, equity_cents, book_value_per_share_e8, shares_count, shareholders_count]
+      properties:
+        reference_month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-09" }
+        equity_cents: { type: integer }
+        book_value_per_share_e8: { type: integer, description: Book value per share in hundred-millionths of a real }
+        shares_count: { type: integer }
+        shareholders_count: { type: integer }
+    AssetDistribution:
+      type: object
+      required: [id, ticker, kind, source, record_on, paid_on, amount_per_share_e8, net_amount_per_share_e8]
+      properties:
+        id: { type: string, format: uuid }
+        ticker: { type: string, example: PETR4 }
+        kind: { type: string, enum: [fii_income, dividend, jcp] }
+        source: { type: string, enum: [cvm, manual], description: "`cvm`: FII monthly report; `manual`: recorded by the current user" }
+        record_on: { type: string, format: date, description: Record date (data com) }
+        paid_on: { type: [string, "null"], format: date, description: Null for FII income from CVM }
+        amount_per_share_e8: { type: integer, minimum: 1, description: Gross value per share in hundred-millionths of a real }
+        net_amount_per_share_e8: { type: integer, minimum: 1, description: JCP net of the 15% income tax; the gross value otherwise }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AssetDistributionInput:
+      type: object
+      properties:
+        ticker: { type: string, description: A stock of the user's portfolio; only on create }
+        kind: { type: string, enum: [dividend, jcp] }
+        record_on: { type: string, format: date }
+        paid_on: { type: string, format: date, description: On or after `record_on` }
+        amount_per_share_e8: { type: integer, minimum: 1, maximum: 100000000000000 }
+    IncomeMonth:
+      type: object
+      required: [month, amount_cents]
+      properties:
+        month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
+        amount_cents: { type: integer, minimum: 0 }
     AssetQuote:
       type: object
       required: [quoted_on, close_cents, volume_cents, trades_count]
@@ -2267,11 +2431,11 @@ components:
             negative_months_count: { type: integer, minimum: 0 }
     ProjectionMonth:
       type: object
-      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative, reserve_cents, expense_by_category]
+      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative, reserve_cents, investment_income_cents, investments_value_cents, net_worth_cents, expense_by_category]
       properties:
         month: { type: string, example: "2026-11" }
         opening_cents: { type: integer }
-        income_cents: { type: integer }
+        income_cents: { type: integer, description: Income entries plus `investment_income_cents` }
         expense_cents: { type: integer }
         fixed_expense_cents: { type: integer }
         variable_expense_cents: { type: integer }
@@ -2279,6 +2443,9 @@ components:
         savings_cents: { type: integer, description: Income minus expenses from the first projected month through this one; may be negative }
         negative: { type: boolean, description: The month closes below zero }
         reserve_cents: { type: integer, description: Net value of the emergency reserve on the month's last day, as in `GET /reserve/projection` }
+        investment_income_cents: { type: integer, minimum: 0, description: Forecast distributions of the portfolio, as in `GET /portfolio/income`; zero up to the current month or with `include_investment_income=false` }
+        investments_value_cents: { type: integer, minimum: 0, description: "Portfolio value as in `GET /portfolio/history`; months after the current one repeat today's value, with no forecast appreciation" }
+        net_worth_cents: { type: integer, description: "`closing_cents` plus `reserve_cents` plus `investments_value_cents`" }
         expense_by_category:
           type: array
           description: Expenses of the month summed by category, largest first (ties by key)
@@ -2413,6 +2580,15 @@ components:
             required: [data]
             properties:
               data: { $ref: "#/components/schemas/InvestmentTransaction" }
+    AssetDistribution:
+      description: Distribution
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/AssetDistribution" }
     InvestmentPosition:
       description: Investment position
       content:

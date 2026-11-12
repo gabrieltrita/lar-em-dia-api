@@ -8,12 +8,14 @@ class Projection
 
   attr_reader :anchor
 
-  def initialize(user:, from:, months: DEFAULT_MONTHS, extra_entries: [])
+  def initialize(user:, from:, months: DEFAULT_MONTHS, extra_entries: [], include_investment_income: true)
+    @user = user
     @entries = user.entries
     @extra_entries = extra_entries
     @from = from.beginning_of_month
     @anchor = user.balances.recent.first
     @reserve = ReserveProjection.new(user)
+    @include_investment_income = include_investment_income
     @months = months == ALL_MONTHS ? months_until_last_entry : months
   end
 
@@ -41,10 +43,13 @@ class Projection
 
   def month_row(month, opening, start)
     totals = monthly_totals.fetch(month, {})
-    income = totals.fetch([ "income", nil ], 0)
+    investment_income = @include_investment_income ? distribution_income.forecast_cents(month) : 0
+    income = totals.fetch([ "income", nil ], 0) + investment_income
     fixed = totals.fetch([ "expense", "fixed" ], 0)
     variable = totals.fetch([ "expense", "variable" ], 0)
     closing = opening + income - fixed - variable
+    reserve = @reserve.net_cents_on(month.end_of_month)
+    investments = investments_value_cents(month)
     {
       month: month.strftime("%Y-%m"),
       opening_cents: opening,
@@ -55,9 +60,25 @@ class Projection
       closing_cents: closing,
       savings_cents: closing - start,
       negative: closing.negative?,
-      reserve_cents: @reserve.net_cents_on(month.end_of_month),
+      reserve_cents: reserve,
+      investment_income_cents: investment_income,
+      investments_value_cents: investments,
+      net_worth_cents: closing + reserve + investments,
       expense_by_category: expense_by_category(month)
     }
+  end
+
+  def distribution_income
+    @distribution_income ||= DistributionIncome.new(user: @user)
+  end
+
+  def investments_value_cents(month)
+    key = month.strftime("%Y-%m")
+    portfolio_values.fetch(key) { key > portfolio_values.keys.max.to_s ? portfolio_values.values.last.to_i : 0 }
+  end
+
+  def portfolio_values
+    @portfolio_values ||= PortfolioHistory.new(user: @user).months.to_h { |row| [ row[:month], row[:market_value_cents] ] }
   end
 
   def expense_by_category(month)

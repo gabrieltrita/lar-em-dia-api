@@ -24,12 +24,37 @@ RSpec.describe "Projection", type: :request do
     expect(months.first).to eq(
       "month" => "2026-11", "opening_cents" => 100_000, "income_cents" => 0, "expense_cents" => 30_000,
       "fixed_expense_cents" => 30_000, "variable_expense_cents" => 0, "closing_cents" => 70_000,
-      "savings_cents" => -30_000, "negative" => false, "reserve_cents" => 0,
+      "savings_cents" => -30_000, "negative" => false, "reserve_cents" => 0, "investment_income_cents" => 0,
+      "investments_value_cents" => 0, "net_worth_cents" => 70_000,
       "expense_by_category" => [ { "category_key" => "rent", "amount_cents" => 30_000 } ]
     )
     expect(json.dig("data", "alerts")).to eq("first_negative_month" => nil, "negative_months_count" => 0)
     expect(json.dig("data", "last_entry_month")).to eq("2026-11")
     expect(months.last).to include("month" => "2027-10", "closing_cents" => 70_000, "savings_cents" => -30_000)
+  end
+
+  it "adds the forecast distributions after the current month and the portfolio to the net worth" do
+    position = create(:investment_position, user: user, asset: create(:asset, ticker: "PETR4"))
+    create(:investment_transaction, user: user, position: position, quantity: 100, price_cents: 3_000, traded_on: Date.new(2026, 3, 2))
+    create(:asset_quote, asset: position.asset, quoted_on: Date.new(2026, 9, 30), close_cents: 3_100)
+    create(:asset_quote, asset: position.asset, quoted_on: Date.new(2026, 11, 11), close_cents: 3_300)
+    create(:asset_distribution, :manual, user: user, asset: position.asset, record_on: Date.new(2026, 10, 5), paid_on: Date.new(2026, 10, 20),
+      amount_per_share_e8: 1_200_000_000)
+    create(:balance, user: user, amount_cents: 100_000, as_of: "2026-09-01")
+
+    travel_to(Time.zone.local(2026, 11, 15, 12)) do
+      get "/api/v1/projection", params: { from: "2026-02", months: 12 }, headers: headers
+      months = json.dig("data", "months").index_by { |row| row["month"] }
+      expect(months["2026-02"]).to include("investments_value_cents" => 0, "investment_income_cents" => 0)
+      expect(months["2026-09"]).to include("investments_value_cents" => 310_000, "net_worth_cents" => 410_000)
+      expect(months["2026-11"]).to include("investment_income_cents" => 0, "investments_value_cents" => 330_000)
+      expect(months["2026-12"]).to include("income_cents" => 10_000, "investment_income_cents" => 10_000, "closing_cents" => 110_000,
+        "investments_value_cents" => 330_000, "net_worth_cents" => 440_000)
+
+      get "/api/v1/projection", params: { from: "2026-12", months: 1, include_investment_income: "false" }, headers: headers
+    end
+
+    expect(json.dig("data", "months", 0)).to include("income_cents" => 0, "investment_income_cents" => 0, "closing_cents" => 100_000)
   end
 
   it "returns whole cents when entries fall between the start of the month and a mid-month balance" do

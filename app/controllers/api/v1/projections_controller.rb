@@ -28,7 +28,8 @@ module Api
       end
 
       def projection(extra_entries = [])
-        Projection.new(user: current_user, from: @from, months: @months, extra_entries: extra_entries)
+        Projection.new(user: current_user, from: @from, months: @months, extra_entries: extra_entries,
+          include_investment_income: params[:include_investment_income].to_s != "false")
       end
 
       def simulation_inputs
