@@ -18,6 +18,8 @@ RSpec.describe "Admin::Metrics", type: :request do
     series_for(bruno, 4)
     create(:user, deactivated_at: 1.day.ago, created_at: 9.days.ago)
     create(:user, anonymized_at: 1.day.ago)
+    create(:investment_transaction, user: carla)
+    create(:investment_position, user: bruno, asset: create(:asset, :fii))
 
     get "/api/v1/admin/metrics", headers: auth_headers(admin)
 
@@ -26,7 +28,8 @@ RSpec.describe "Admin::Metrics", type: :request do
       "total" => 4, "confirmed" => 3, "active_30d" => 2, "new_30d" => 2, "deactivated" => 1, "with_two_factor" => 1
     )
     expect(json.dig("data", "engagement")).to eq(
-      "with_balance" => 1, "with_entries" => 1, "with_5_series" => 1, "entries_created_30d" => 1
+      "with_balance" => 1, "with_entries" => 1, "with_5_series" => 1, "entries_created_30d" => 1,
+      "with_portfolio" => 2, "investment_transactions_30d" => 1, "positions_by_goal" => { "income" => 1, "growth" => 1 }
     )
     expect(response.body).not_to include("Private rent", "123456")
   end

@@ -4,6 +4,7 @@ class Entry < ApplicationRecord
   belongs_to :user
   belongs_to :category
   belongs_to :series, class_name: "EntrySeries", optional: true, inverse_of: :entries
+  has_one :investment_transaction, dependent: :nullify
 
   enum :kind, { income: "income", expense: "expense" }, validate: true
   enum :status, { pending: "pending", paid: "paid" }, default: :pending, validate: true

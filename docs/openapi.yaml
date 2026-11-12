@@ -55,6 +55,7 @@ info:
     | `consent_required` | 422 | Required consent cannot be revoked |
     | `only_for_single_entry` | 422 | `status` or `paid_on` changed with an entry `scope` other than `one` |
     | `installment_amount_locked` | 422 | An installment's `amount_cents` changed with a `scope` other than `one` |
+    | `insufficient_quantity` | 422 | Deleting an investment transaction would leave a later sale without enough shares |
     | `rate_limited` | 429 | Too many requests, see `Retry-After` |
     | `internal_error` | 500 | Unexpected error |
     | `oauth_provider_unavailable` | 503 | The provider's signing keys could not be fetched |
@@ -65,7 +66,10 @@ info:
     (`nature` on an income entry, `kind` on an installments series of income) and `not_a_number`,
     `greater_than_or_equal_to`, `less_than_or_equal_to` (series `entries_count` and `total_cents`, and amounts above
     100,000,000,000.00 or a balance below its negative) and `present` (series `entries_count` and `total_cents`), and
-    `immutable` (a category's `key` or `kind` after it is created).
+    `immutable` (a category's `key` or `kind` after it is created, or an investment transaction's `ticker`),
+    `unknown_asset` (a `ticker` that is not in the catalog), `insufficient_quantity` (a transaction that would leave the
+    position below zero shares on some day) and `only_for_trades` (`price_cents`, `fees_cents` or `debit_balance` on a
+    split, reverse split or bonus).
 servers:
   - url: /api/v1
 tags:
@@ -81,6 +85,9 @@ tags:
       nature (fixed or variable) defaults to the category's `default_nature`.
   - name: Projection
     description: Month by month balance projection built from the latest balance and the entries' due dates.
+  - name: Investments
+    description: The user's portfolio, built from their transactions. Amounts are integer cents (BRL) and per-share prices
+      with more decimals are integers in `_e8` (hundred-millionths of a real). Informational only, never investment advice.
   - name: Assets
     description: Catalog of stocks and FIIs listed on B3, with the closing quote of the latest trading day. Quotes come from
       B3's daily COTAHIST file and the registry (CNPJ, full name, sector or FII segment) from CVM open data (ODbL). Amounts
@@ -1232,6 +1239,182 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /investment_transactions:
+    get:
+      tags: [Investments]
+      summary: List the current user's investment transactions by trade date
+      parameters:
+        - { name: ticker, in: query, schema: { type: string }, example: PETR4 }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/InvestmentTransaction" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Investments]
+      summary: Record a buy, sell, split, reverse split or bonus
+      description: |
+        The first transaction of a ticker opens the position, with `goal` or, without it, `income` for an FII and
+        `growth` for a stock. For "I already hold X shares at an average price of Y", send a buy with that quantity
+        and price. With `debit_balance`, a buy creates a paid expense in the `investment_contribution` category and a
+        sell a paid income in `investment_redemption`, both on `traded_on`, so the projection counts the money.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvestmentTransactionInput" }
+      responses:
+        "201": { $ref: "#/components/responses/InvestmentTransaction" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /investment_transactions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Investments]
+      summary: Show an investment transaction
+      description: Another user's record answers 404, not 403, so ids cannot be probed.
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentTransaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Investments]
+      summary: Update an investment transaction
+      description: |
+        The `ticker` cannot change (`immutable`) and `goal` is ignored. The linked expense or income follows the new
+        values; `debit_balance` `false` deletes it and `true` creates it. Without `debit_balance` the link is kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvestmentTransactionInput" }
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentTransaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Investments]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentTransaction" }
+    delete:
+      tags: [Investments]
+      summary: Delete an investment transaction
+      description: Also deletes its linked expense or income, and the position when it was its last transaction.
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [deleted_id]
+                    properties:
+                      deleted_id: { type: string, format: uuid }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: A later sale would be left without enough shares (`insufficient_quantity`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /investment_positions/{ticker}:
+    parameters:
+      - { name: ticker, in: path, required: true, description: Case insensitive, schema: { type: string }, example: HGLG11 }
+    patch:
+      tags: [Investments]
+      summary: Change the goal of a position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [goal]
+              properties:
+                goal: { type: string, enum: [income, growth] }
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentPosition" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Investments]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/InvestmentPosition" }
+  /portfolio:
+    get:
+      tags: [Investments]
+      summary: Positions and totals of the current user's portfolio
+      description: |
+        Quantities and costs come from the transactions: the average price is weighted and includes fees, a sale
+        removes shares at the average price, and splits, reverse splits and bonuses change the shares but not the
+        cost. The market value uses the latest closing quote, or the cost when the asset has no quote.
+      parameters:
+        - { name: goal, in: query, schema: { type: string, enum: [income, growth] } }
+        - { name: include_closed, in: query, description: Also list positions with zero shares, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Portfolio
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [totals, goals, positions]
+                    properties:
+                      totals: { $ref: "#/components/schemas/PortfolioTotals" }
+                      goals:
+                        type: object
+                        required: [income, growth]
+                        properties:
+                          income: { $ref: "#/components/schemas/PortfolioTotals" }
+                          growth: { $ref: "#/components/schemas/PortfolioTotals" }
+                      positions:
+                        type: array
+                        items: { $ref: "#/components/schemas/PortfolioPosition" }
+  /portfolio/history:
+    get:
+      tags: [Investments]
+      summary: Month by month market value and net contributions
+      description: |
+        From the month of the first transaction to the current month (at most the last 120 months). Each month values
+        the shares held on its last day at the last closing quote up to that day, or at cost when there is none.
+      responses:
+        "200":
+          description: Months, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [month, contributed_cents, market_value_cents]
+                      properties:
+                        month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
+                        contributed_cents: { type: integer, description: Buys with fees minus sale proceeds net of fees, up to the month }
+                        market_value_cents: { type: integer }
   /assets:
     get:
       tags: [Assets]
@@ -1550,6 +1733,67 @@ components:
         position: { type: integer, minimum: 0 }
         default_nature: { type: [string, "null"], enum: [fixed, variable, null], description: Required for expense categories; income has none }
         active: { type: boolean }
+    InvestmentTransaction:
+      type: object
+      required: [id, ticker, kind, traded_on, quantity, price_cents, fees_cents, entry_id]
+      properties:
+        id: { type: string, format: uuid }
+        ticker: { type: string, example: PETR4 }
+        kind: { type: string, enum: [buy, sell, split, reverse_split, bonus] }
+        traded_on: { type: string, format: date }
+        quantity: { type: integer, minimum: 1, description: Shares bought or sold, or added (split, bonus) or removed (reverse split) }
+        price_cents: { type: [integer, "null"], minimum: 1, description: Price per share; buys and sells only }
+        fees_cents: { type: integer, minimum: 0 }
+        entry_id: { type: [string, "null"], format: uuid, description: The expense or income created by `debit_balance` }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    InvestmentTransactionInput:
+      type: object
+      properties:
+        ticker: { type: string, description: Any asset of the catalog, including inactive ones; only on create }
+        kind: { type: string, enum: [buy, sell, split, reverse_split, bonus] }
+        traded_on: { type: string, format: date, description: Today or a past date }
+        quantity: { type: integer, minimum: 1, maximum: 1000000000 }
+        price_cents: { type: [integer, "null"], minimum: 1, maximum: 10000000000000, description: Required for buys and sells, absent otherwise }
+        fees_cents: { type: integer, minimum: 0, maximum: 10000000000000, default: 0, description: Buys and sells only }
+        goal: { type: string, enum: [income, growth], description: Only when the transaction opens the position }
+        debit_balance: { type: boolean, default: false, description: Buys and sells only }
+    InvestmentPosition:
+      type: object
+      required: [ticker, goal]
+      properties:
+        ticker: { type: string }
+        goal: { type: string, enum: [income, growth] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PortfolioTotals:
+      type: object
+      required: [contributed_cents, cost_cents, market_value_cents, gain_cents, realized_cents]
+      properties:
+        contributed_cents: { type: integer, description: Buys with fees minus sale proceeds net of fees }
+        cost_cents: { type: integer, description: Cost of the shares held, at the average price }
+        market_value_cents: { type: integer }
+        gain_cents: { type: integer, description: Market value minus cost; may be negative }
+        realized_cents: { type: integer, description: Profit or loss of the sales; may be negative }
+    PortfolioPosition:
+      type: object
+      required: [ticker, name, asset_type, goal, quantity, average_price_e8, cost_cents, contributed_cents, realized_cents, quote, market_value_cents, gain_cents]
+      properties:
+        ticker: { type: string }
+        name: { type: string }
+        asset_type: { type: string, enum: [stock, fii] }
+        goal: { type: string, enum: [income, growth] }
+        quantity: { type: integer, minimum: 0 }
+        average_price_e8: { type: integer, description: "Average price per share in hundred-millionths of a real (R$ 12.34 is 1234000000)" }
+        cost_cents: { type: integer }
+        contributed_cents: { type: integer }
+        realized_cents: { type: integer }
+        quote:
+          oneOf:
+            - { $ref: "#/components/schemas/AssetQuote" }
+            - { type: "null" }
+        market_value_cents: { type: integer, description: Shares times the latest close, or the cost without a quote }
+        gain_cents: { type: integer }
     Asset:
       type: object
       required: [ticker, name, asset_type, sector]
@@ -1728,12 +1972,20 @@ components:
             with_two_factor: { type: integer }
         engagement:
           type: object
-          required: [with_balance, with_entries, with_5_series, entries_created_30d]
+          required: [with_balance, with_entries, with_5_series, entries_created_30d, with_portfolio, investment_transactions_30d, positions_by_goal]
           properties:
             with_balance: { type: integer, description: Users with at least one balance }
             with_entries: { type: integer, description: Users with at least one entry }
             with_5_series: { type: integer, description: Users with at least five series }
             entries_created_30d: { type: integer }
+            with_portfolio: { type: integer, description: Users with at least one investment position }
+            investment_transactions_30d: { type: integer }
+            positions_by_goal:
+              type: object
+              required: [income, growth]
+              properties:
+                income: { type: integer }
+                growth: { type: integer }
         signups_by_week:
           type: array
           description: The last 12 weeks, oldest first
@@ -1770,6 +2022,24 @@ components:
         provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
         id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
+    InvestmentTransaction:
+      description: Investment transaction
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/InvestmentTransaction" }
+    InvestmentPosition:
+      description: Investment position
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/InvestmentPosition" }
     AdminCategory:
       description: Category
       content:

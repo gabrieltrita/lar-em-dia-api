@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_12_001000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_101000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -136,6 +136,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_001000) do
     t.index ["user_id", "provider"], name: "index_identities_on_user_id_and_provider", unique: true
   end
 
+  create_table "investment_positions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "asset_id", null: false
+    t.string "goal", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id"], name: "index_investment_positions_on_asset_id"
+    t.index ["user_id", "asset_id"], name: "index_investment_positions_on_user_id_and_asset_id", unique: true
+  end
+
+  create_table "investment_transactions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "position_id", null: false
+    t.uuid "entry_id"
+    t.string "kind", null: false
+    t.date "traded_on", null: false
+    t.bigint "quantity", null: false
+    t.bigint "price_cents"
+    t.bigint "fees_cents", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["entry_id"], name: "index_investment_transactions_on_entry_id", unique: true
+    t.index ["position_id", "traded_on"], name: "index_investment_transactions_on_position_id_and_traded_on"
+    t.index ["user_id", "traded_on"], name: "index_investment_transactions_on_user_id_and_traded_on"
+  end
+
   create_table "refresh_tokens", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
     t.string "token_digest", null: false
@@ -196,5 +222,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_001000) do
   add_foreign_key "entries", "users"
   add_foreign_key "entry_series", "users"
   add_foreign_key "identities", "users"
+  add_foreign_key "investment_positions", "assets"
+  add_foreign_key "investment_positions", "users"
+  add_foreign_key "investment_transactions", "entries", on_delete: :nullify
+  add_foreign_key "investment_transactions", "investment_positions", column: "position_id"
+  add_foreign_key "investment_transactions", "users"
   add_foreign_key "refresh_tokens", "users", on_delete: :cascade
 end

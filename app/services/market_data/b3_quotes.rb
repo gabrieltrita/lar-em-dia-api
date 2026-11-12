@@ -7,16 +7,32 @@ module MarketData
     BDI_TYPES = { "02" => :stock, "12" => :fii }.freeze
     STOCK_SPECIFICATIONS = /\A(ON|PN[A-H]?|UNT)\b/
 
-    Quote = Data.define(:ticker, :isin, :name, :asset_type, :quoted_on, :close_cents, :volume_cents, :trades_count)
-
-    def self.fetch(date)
-      name = "COTAHIST_D#{date.strftime('%d%m%Y')}"
-      entries = Download.zip_entries(URI.join(BASE_URI, "#{name}.ZIP"), [ "#{name}.TXT" ])
-      entries && parse(entries.values.first)
+    Quote = Data.define(:ticker, :isin, :name, :asset_type, :quoted_on, :close_cents, :volume_cents, :trades_count) do
+      def catalogable?
+        ticker.match?(Asset::TICKER_FORMAT) && isin.match?(Asset::ISIN_FORMAT) && name.present? && close_cents.positive?
+      end
     end
 
-    def self.parse(content)
-      content.force_encoding(Encoding::ISO_8859_1).encode(Encoding::UTF_8).each_line.filter_map { |line| quote(line) }
+    def self.fetch(date)
+      quotes = []
+      found = each_quote("COTAHIST_D#{date.strftime('%d%m%Y')}") { |quote| quotes << quote }
+      found && quotes
+    end
+
+    def self.month_end(month)
+      latest = {}
+      found = each_quote("COTAHIST_M#{month.strftime('%m%Y')}") do |quote|
+        previous = latest[quote.ticker]
+        latest[quote.ticker] = quote if quote.catalogable? && (previous.nil? || quote.quoted_on > previous.quoted_on)
+      end
+      found && latest.values
+    end
+
+    def self.each_quote(name)
+      Download.zip_lines(URI.join(BASE_URI, "#{name}.ZIP"), "#{name}.TXT") do |line|
+        quote = quote(line.force_encoding(Encoding::ISO_8859_1).encode(Encoding::UTF_8))
+        yield quote if quote
+      end
     end
 
     def self.quote(line)
@@ -37,6 +53,6 @@ module MarketData
       )
     end
 
-    private_class_method :parse, :quote
+    private_class_method :each_quote, :quote
   end
 end

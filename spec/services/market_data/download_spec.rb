@@ -69,4 +69,40 @@ RSpec.describe MarketData::Download do
 
     expect { described_class.zip_entries(uri, %w[a.csv]) }.to raise_error(MarketData::Unavailable)
   end
+
+  describe ".zip_lines" do
+    it "yields the lines of an entry" do
+      stub_request(:get, url).to_return(body: zip_of("a.txt" => "one\ntwo\n"))
+      lines = []
+
+      expect(described_class.zip_lines(uri, "a.txt") { |line| lines << line }).to be(true)
+      expect(lines).to eq([ "one\n", "two\n" ])
+    end
+
+    it "returns nil when the file does not exist yet" do
+      stub_request(:get, url).to_return(status: 404)
+
+      expect(described_class.zip_lines(uri, "a.txt") { |_line| nil }).to be_nil
+    end
+
+    it "fails when the entry is missing or the source is down" do
+      stub_request(:get, url).to_return(body: zip_of("a.txt" => "one"))
+      expect { described_class.zip_lines(uri, "b.txt") { |_line| nil } }.to raise_error(MarketData::Unavailable)
+
+      stub_request(:get, url).to_return(status: 500)
+      expect { described_class.zip_lines(uri, "a.txt") { |_line| nil } }.to raise_error(MarketData::Unavailable)
+    end
+
+    it "stops when the lines inflate beyond the limit despite the declared size" do
+      stub_request(:get, url).to_return(body: zip_of("a.txt" => "one"))
+      entry = instance_double(Zip::Entry, size: 1)
+      allow(entry).to receive(:get_input_stream).and_yield(StringIO.new("12\n34\n"))
+      allow(Zip::File).to receive(:open_buffer).and_return(instance_double(Zip::File, find_entry: entry))
+      stub_const("#{described_class}::MAX_ENTRY_BYTES", 4)
+      lines = []
+
+      expect { described_class.zip_lines(uri, "a.txt") { |line| lines << line } }.to raise_error(MarketData::Unavailable)
+      expect(lines).to eq([ "12\n" ])
+    end
+  end
 end

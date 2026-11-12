@@ -12,7 +12,8 @@ class Category < ApplicationRecord
       alimony_received: "Alimony received",
       tax_refund: "Tax refund",
       reimbursement: "Reimbursement",
-      other_income: "Other income"
+      other_income: "Other income",
+      investment_redemption: "Investment redemption"
     },
     expense: {
       housing: "Housing",
@@ -34,7 +35,8 @@ class Category < ApplicationRecord
       pets: "Pets",
       gifts_donations: "Gifts and donations",
       taxes_fees: "Taxes and fees",
-      other_expense: "Other expense"
+      other_expense: "Other expense",
+      investment_contribution: "Investment contribution"
     }
   }.freeze
 
