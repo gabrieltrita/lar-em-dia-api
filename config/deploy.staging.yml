@@ -4,6 +4,7 @@ service: <%= app["slug"] %>-api-staging
 env:
   clear:
     ENABLE_API_DOCS: "true"
+    DISABLED_CRON_JOBS: "market_data_sync"
 
 accessories:
   db:

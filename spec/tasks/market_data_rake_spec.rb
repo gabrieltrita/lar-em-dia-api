@@ -1,9 +1,23 @@
 require "rails_helper"
 require "rake"
 
-RSpec.describe "market_data:backfill" do
+RSpec.describe "market_data tasks" do
   before(:all) do
     Rails.application.load_tasks if Rake::Task.tasks.none? { |t| t.name == "market_data:backfill" }
+  end
+
+  before { allow(MarketDataSyncJob).to receive(:perform_now) }
+
+  it "imports the previous weekday by default" do
+    Rake::Task["market_data:sync"].execute(Rake::TaskArguments.new([ :date, :registry ], []))
+
+    expect(MarketDataSyncJob).to have_received(:perform_now).with(nil, with_registry: false)
+  end
+
+  it "imports a given day and the CVM registry when asked" do
+    Rake::Task["market_data:sync"].execute(Rake::TaskArguments.new([ :date, :registry ], [ "2026-11-11", "true" ]))
+
+    expect(MarketDataSyncJob).to have_received(:perform_now).with("2026-11-11", with_registry: true)
   end
 
   it "loads the months from January of the year to last month and prints the counts" do
