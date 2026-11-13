@@ -1,6 +1,8 @@
 module Api
   module V1
     class PortfoliosController < ApplicationController
+      SIMULATION_FIELDS = %i[kind initial_cents monthly_cents months ticker monthly_yield_bps annual_rate_bps reinvest target_monthly_income_cents].freeze
+
       before_action { authorize :portfolio }
 
       def show
@@ -25,6 +27,13 @@ module Api
           data: { monthly_average_cents: income.monthly_average_cents, received: income.received, forecast: income.forecast(months),
                   positions: income.positions }
         }
+      end
+
+      def simulation
+        simulation = PortfolioSimulation.new(params.permit(*SIMULATION_FIELDS).to_h)
+        return render_validation_errors(simulation) unless simulation.valid?
+
+        render json: { data: simulation.result }
       end
 
       private

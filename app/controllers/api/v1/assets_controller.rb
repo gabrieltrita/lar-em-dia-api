@@ -4,6 +4,10 @@ module Api
       include Paginatable
 
       DISTRIBUTION_MONTHS = 24
+      SCREENER_ERRORS = {
+        "invalid_filter" => "Indicator filters must be integers",
+        "invalid_sort" => "sort must be an indicator or ticker and direction asc or desc"
+      }.freeze
 
       def index
         authorize Asset
@@ -11,6 +15,10 @@ module Api
         assets = assets.where(asset_type: params[:asset_type]) if Asset.asset_types.key?(params[:asset_type])
         assets = assets.where(sector: params[:sector]) if params[:sector].present?
         assets = assets.search(params[:q]) if params[:q].present?
+        screener = AssetScreener.new(params)
+        assets = screener.apply(assets)
+        return render_error(status: :bad_request, code: screener.error, message: SCREENER_ERRORS.fetch(screener.error)) unless assets
+
         pagy, assets = pagy(assets)
         render json: { data: AssetBlueprint.render_as_hash(assets), meta: pagination_meta(pagy) }
       end

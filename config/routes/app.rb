@@ -8,6 +8,7 @@ resources :investment_positions, only: :update, param: :ticker
 resource :portfolio, only: :show do
   get :history
   get :income
+  post :simulation
 end
 resources :asset_distributions, only: %i[index create update destroy]
 resources :reserve_accounts, only: %i[index show create update destroy]

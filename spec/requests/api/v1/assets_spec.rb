@@ -18,7 +18,7 @@ RSpec.describe "Assets", type: :request do
     get "/api/v1/assets", params: { limit: 1 }, headers: headers
 
     expect(response).to have_http_status(:ok)
-    expect(json["data"]).to eq([ { "ticker" => hglg.ticker, "name" => "PÁTRIA LOG", "asset_type" => "fii", "sector" => "Logística" } ])
+    expect(json["data"]).to eq([ { "ticker" => hglg.ticker, "name" => "PÁTRIA LOG", "asset_type" => "fii", "sector" => "Logística", "indicators" => nil } ])
     expect(json["meta"]).to include("total" => 2, "pages" => 2, "next" => 2)
   end
 

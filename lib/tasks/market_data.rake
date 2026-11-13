@@ -13,6 +13,20 @@ namespace :market_data do
     puts results.to_json
   end
 
+  desc "Load the companies' annual statements (DFP) from CVM, from YEAR to last year, then refresh the indicators (idempotent)"
+  task :financials, [ :year ] => :environment do |_task, args|
+    cnpjs = Asset.stock.where.not(cnpj: nil).distinct.pluck(:cnpj)
+    results = (Integer(args.fetch(:year))...Date.current.year).map do |year|
+      { year: year, financials_saved: MarketData::FinancialSync.call(MarketData::CvmFinancials.fetch(year, cnpjs).to_a) }
+    end
+    puts({ years: results, indicators_saved: AssetIndicators.refresh }.to_json)
+  end
+
+  desc "Recompute the indicators of every listed asset from the stored quotes, distributions and statements"
+  task indicators: :environment do
+    puts({ indicators_saved: AssetIndicators.refresh }.to_json)
+  end
+
   desc "Import one day's B3 quotes now (default: the previous weekday); pass registry=true to refresh the CVM registry too"
   task :sync, [ :date, :registry ] => :environment do |_task, args|
     MarketDataSyncJob.perform_now(args[:date].presence, with_registry: args[:registry] == "true")

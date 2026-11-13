@@ -12,7 +12,7 @@ RSpec.describe MarketDataSyncJob do
     expect(Asset.where.not(cnpj: nil)).to be_empty
     expect(Rails.logger).to have_received(:info).with(
       { job: "MarketDataSyncJob", date: "2026-11-11", status: "synced", quotes_received: 6, quotes_saved: 6, deactivated: 0,
-        funds_matched: 0, companies_matched: 0 }
+        funds_matched: 0, companies_matched: 0, indicators_saved: 6 }
     )
   end
 
@@ -37,6 +37,18 @@ RSpec.describe MarketDataSyncJob do
     expect(hglg.distributions.find_by!(record_on: Date.new(2026, 1, 31))).to have_attributes(kind: "fii_income", source: "cvm",
       paid_on: nil, amount_per_share_e8: 109_896_433)
     expect(Rails.logger).to have_received(:info).with(hash_including(status: "synced", fund_reports_saved: 14, distributions_saved: 14))
+  end
+
+  it "imports last year's company statements with the registry and computes the indicators" do
+    stub_b3_quotes
+    stub_cvm_registry
+
+    described_class.perform_now("2026-11-11", with_registry: true)
+
+    petrobras = Asset.find_by!(ticker: "PETR4")
+    expect(petrobras.financials.sole).to have_attributes(fiscal_year: 2025, net_income_cents: 11_060_500_000_000)
+    expect(petrobras.indicator).to have_attributes(computed_on: Date.current, p_l_e2: be_positive, payout_bps: 4_087)
+    expect(Rails.logger).to have_received(:info).with(hash_including(financials_saved: 3, indicators_saved: 6))
   end
 
   it "refreshes the CVM registry with Monday's quotes" do
