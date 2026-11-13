@@ -218,6 +218,16 @@ RSpec.describe User do
       expect(InvestmentTransaction.exists?(other.id)).to be(true)
     end
 
+    it "deletes the distributions recorded by hand but keeps the ones from CVM" do
+      manual = create(:asset_distribution, :manual, user: user)
+      cvm = create(:asset_distribution)
+
+      user.anonymize!
+
+      expect(AssetDistribution.exists?(manual.id)).to be(false)
+      expect(AssetDistribution.exists?(cvm.id)).to be(true)
+    end
+
     it "deletes the emergency reserve and the entries it created" do
       entry = create(:entry, user: user)
       movement = create(:reserve_movement, user: user, entry: entry)

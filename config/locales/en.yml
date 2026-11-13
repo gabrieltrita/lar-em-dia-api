@@ -39,6 +39,13 @@ en:
               inactive: "is no longer available"
             nature:
               only_for_expenses: "can only be set on expenses"
+        asset_distribution:
+          attributes:
+            ticker:
+              unknown_asset: "is not a position in your portfolio"
+              stock_only: "must be a stock; FII income comes from CVM"
+            paid_on:
+              before_record_on: "cannot be before the record date"
         reserve_account:
           attributes:
             cdi_percent_bps:

@@ -53,4 +53,32 @@ RSpec.describe "Portfolio", type: :request do
     patch "/api/v1/investment_positions/VALE3", params: { goal: "income" }, headers: headers, as: :json
     expect(response).to have_http_status(:not_found)
   end
+
+  describe "GET /portfolio/income" do
+    before do
+      create(:asset_distribution, :manual, user: user, asset: position.asset, record_on: Date.new(2026, 10, 5), paid_on: Date.new(2026, 10, 20),
+        amount_per_share_e8: 150_000_000)
+    end
+
+    it "shows the distributions received and forecast" do
+      travel_to(Time.zone.local(2026, 11, 12, 12)) { get "/api/v1/portfolio/income", params: { months: 2 }, headers: headers }
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "monthly_average_cents")).to eq(1_250)
+      expect(json.dig("data", "received").last(2)).to eq([ { "month" => "2026-10", "amount_cents" => 15_000 }, { "month" => "2026-11", "amount_cents" => 0 } ])
+      expect(json.dig("data", "forecast")).to eq([ { "month" => "2026-12", "amount_cents" => 1_250 }, { "month" => "2027-01", "amount_cents" => 1_250 } ])
+      expect(json.dig("data", "positions")).to eq([
+        { "ticker" => "PETR4", "goal" => "growth", "quantity" => 100, "received_12m_cents" => 15_000, "monthly_forecast_cents" => 1_250 }
+      ])
+    end
+
+    it "forecasts twelve months by default and refuses an invalid number of months" do
+      get "/api/v1/portfolio/income", headers: headers
+      expect(json.dig("data", "forecast").size).to eq(12)
+
+      get "/api/v1/portfolio/income", params: { months: 61 }, headers: headers
+      expect(response).to have_http_status(:bad_request)
+      expect(json.dig("error", "code")).to eq("invalid_months")
+    end
+  end
 end

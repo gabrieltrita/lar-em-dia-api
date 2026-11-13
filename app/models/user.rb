@@ -9,7 +9,7 @@ class User < ApplicationRecord
   BASE_LOCK_DURATION = 15.minutes
   MAX_LOCK_DURATION = 24.hours
 
-  PERSONAL_DATA = %i[identities balances entries entry_series investment_transactions investment_positions reserve_accounts reserve_movements].freeze
+  PERSONAL_DATA = %i[identities balances entries entry_series investment_transactions investment_positions asset_distributions reserve_accounts reserve_movements].freeze
 
   DEFAULT_TIME_ZONE = "America/Sao_Paulo"
   TIME_ZONES = TZInfo::Timezone.all_identifiers.to_set.freeze
@@ -24,6 +24,7 @@ class User < ApplicationRecord
   has_many :entry_series, class_name: "EntrySeries", dependent: :destroy
   has_many :investment_transactions, dependent: :destroy
   has_many :investment_positions, dependent: :destroy
+  has_many :asset_distributions, dependent: :destroy
   has_many :reserve_accounts, dependent: :destroy
   has_many :reserve_movements, dependent: :destroy
 

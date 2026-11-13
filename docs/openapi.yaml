@@ -23,6 +23,8 @@ info:
     | `invalid_date` | 400 | A date query parameter is not `YYYY-MM-DD` |
     | `invalid_month` | 400 | A month query parameter (such as `from` or `projection_from`) is not `YYYY-MM` |
     | `invalid_months` | 400 | `months` (or `projection_months`) is not an integer from 1 to 60 or `all` |
+    | `invalid_filter` | 400 | An indicator filter of `GET /assets` is not an integer |
+    | `invalid_sort` | 400 | `sort` of `GET /assets` is not an indicator or `ticker`, or `direction` is not `asc` or `desc` |
     | `missing_token` | 401 | No `Authorization` header, or no refresh cookie on `POST /auth/refresh` in cookie mode |
     | `invalid_token` | 401 | Invalid, expired or wrong-type token |
     | `token_revoked` | 401 | Access token revoked by logout |
@@ -68,7 +70,9 @@ info:
     `greater_than_or_equal_to`, `less_than_or_equal_to` (series `entries_count` and `total_cents`, and amounts above
     100,000,000,000.00 or a balance below its negative) and `present` (series `entries_count` and `total_cents`), and
     `immutable` (a category's `key` or `kind` after it is created, or an investment transaction's `ticker`),
-    `unknown_asset` (a `ticker` that is not in the catalog), `insufficient_quantity` (a transaction that would leave the
+    `unknown_asset` (a `ticker` that is not in the catalog, or a distribution's `ticker` without a position),
+    `stock_only` (a distribution recorded by hand on an FII), `before_record_on` (a distribution paid before its record
+    date), `no_income_data` (a simulation `ticker` without a price or distributions to project), `insufficient_quantity` (a transaction that would leave the
     position below zero shares on some day) and `only_for_trades` (`price_cents`, `fees_cents` or `debit_balance` on a
     split, reverse split or bonus), `rate_required` and `rate_not_allowed` (a reserve account's `cdi_percent_bps` or
     `annual_rate_bps` missing for its kind, or sent to a kind that does not use it), `insufficient_reserve` (a
@@ -1168,9 +1172,15 @@ paths:
       description: |
         The anchor is the most recent balance; without one it is zero and `anchor` is null. A month closes at the anchor
         plus income minus expenses due between the anchor date and the month's last day (worked backwards for months
-        before the anchor). Pending and paid entries both count, by due date.
+        before the anchor). Pending and paid entries both count, by due date. Unless `include_investment_income` is
+        `false`, the months after the current one also count the portfolio's forecast distributions as income (without
+        creating entries). Each month also carries the portfolio value and the total net worth.
       parameters:
         - { name: from, in: query, description: First month; defaults to the current month, schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" } }
+        - name: include_investment_income
+          in: query
+          description: Add the forecast distributions of the portfolio, as in `GET /portfolio/income`, to the income of the months after the current one
+          schema: { type: boolean, default: true }
         - name: months
           in: query
           description: Number of months, or `all` to project through the month of the user's last entry (at least 1 and at most 60 months)
@@ -1423,6 +1433,113 @@ paths:
                         month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
                         contributed_cents: { type: integer, description: Buys with fees minus sale proceeds net of fees, up to the month }
                         market_value_cents: { type: integer }
+  /portfolio/income:
+    get:
+      tags: [Investments]
+      summary: Distributions received and forecast for the current user's portfolio
+      description: |
+        A distribution counts in the month it is paid (FIIs from the CVM monthly report have no payment date and count
+        in the month after the record date) for the shares held on the record date. JCP counts net of the 15% income
+        tax. `received` covers the last 12 months, the current one included. Each month of `forecast` (after the
+        current one) uses the distributions already announced for it or, without them, the average of the last 12
+        months per share times the shares held today. Totals are rounded to cents once per month. Informational only,
+        never investment advice.
+      parameters:
+        - { name: months, in: query, description: Months of forecast, schema: { type: integer, minimum: 1, maximum: 60, default: 12 } }
+      responses:
+        "200":
+          description: Passive income
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [monthly_average_cents, received, forecast, positions]
+                    properties:
+                      monthly_average_cents: { type: integer, minimum: 0, description: Received in the last 12 months divided by 12 }
+                      received:
+                        type: array
+                        items: { $ref: "#/components/schemas/IncomeMonth" }
+                      forecast:
+                        type: array
+                        items: { $ref: "#/components/schemas/IncomeMonth" }
+                      positions:
+                        type: array
+                        items:
+                          type: object
+                          required: [ticker, goal, quantity, received_12m_cents, monthly_forecast_cents]
+                          properties:
+                            ticker: { type: string }
+                            goal: { type: string, enum: [income, growth] }
+                            quantity: { type: integer, minimum: 0 }
+                            received_12m_cents: { type: integer, minimum: 0 }
+                            monthly_forecast_cents: { type: integer, minimum: 0, description: Average of the last 12 months per share times the shares held today }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /asset_distributions:
+    get:
+      tags: [Investments]
+      summary: List the distributions the current user recorded by hand, newest first
+      parameters:
+        - { name: ticker, in: query, schema: { type: string }, example: PETR4 }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200":
+          description: Page of distributions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AssetDistribution" }
+                  meta: { $ref: "#/components/schemas/Pagination" }
+    post:
+      tags: [Investments]
+      summary: Record a stock dividend or JCP by hand
+      description: |
+        There is no free official source of stock distributions, so the user records the ones they receive. Only
+        stocks of the user's portfolio accept them (FII income comes from CVM), and they count only for that user.
+        `amount_per_share_e8` is the gross value per share; JCP is shown and counted net of the 15% income tax.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssetDistributionInput" }
+      responses:
+        "201": { $ref: "#/components/responses/AssetDistribution" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /asset_distributions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Investments]
+      summary: Update a distribution recorded by hand
+      description: The `ticker` cannot change (`immutable`). Another user's record answers 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssetDistributionInput" }
+      responses:
+        "200": { $ref: "#/components/responses/AssetDistribution" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Investments]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/AssetDistribution" }
+    delete:
+      tags: [Investments]
+      summary: Delete a distribution recorded by hand
+      responses:
+        "200": { $ref: "#/components/responses/DeletedId" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reserve_accounts:
     get:
       tags: [Reserve]
@@ -1651,15 +1768,90 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /portfolio/simulation:
+    post:
+      tags: [Investments]
+      summary: Simulate future income or growth of an investment, without saving anything
+      description: |
+        `income` buys whole shares every month at a constant price (the latest close of `ticker`) with the money
+        contributed and, with `reinvest`, the income received, and pays each month the average monthly FII
+        distribution per share of the last 12 months or, for stocks, a twelfth of `dy_12m_bps` times the price. Without
+        `ticker`, `monthly_yield_bps` is applied to the value invested. `growth` compounds `initial_cents` and the
+        contributions (at each month's end) at `annual_rate_bps`, chosen by the user. Past income and any rate never
+        guarantee future results; informational only, never investment advice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, months]
+              properties:
+                kind: { type: string, enum: [income, growth] }
+                initial_cents: { type: integer, minimum: 0, maximum: 100000000000, default: 0 }
+                monthly_cents: { type: integer, minimum: 0, maximum: 100000000000, default: 0, description: At least one of the two amounts is positive }
+                months: { type: integer, minimum: 1, maximum: 600 }
+                ticker: { type: string, description: "`income`: the asset whose price and distributions are used" }
+                monthly_yield_bps: { type: integer, minimum: 1, maximum: 1000, description: "`income` without `ticker`" }
+                reinvest: { type: boolean, default: true, description: "`income`: reinvest what is received" }
+                target_monthly_income_cents: { type: integer, minimum: 1, description: "`income`: the monthly income to reach" }
+                annual_rate_bps: { type: integer, minimum: -9999, maximum: 10000, description: "`growth`: required" }
+      responses:
+        "200":
+          description: Simulation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    oneOf:
+                      - $ref: "#/components/schemas/IncomeSimulation"
+                      - $ref: "#/components/schemas/GrowthSimulation"
+        "422": { $ref: "#/components/responses/ValidationError" }
   /assets:
     get:
       tags: [Assets]
-      summary: List the active stocks and FIIs by ticker
-      description: An asset is active while it has a quote in the last 30 days.
+      summary: List and filter the active stocks and FIIs
+      description: |
+        An asset is active while it has a quote in the last 30 days. The indicator filters (`<indicator>_min`,
+        `<indicator>_max`, inclusive, in the indicator's own unit) leave out assets without that indicator. The list
+        is only filtered and sorted, never ranked or recommended. Sorting by an indicator puts the assets without it
+        last; the default direction is `desc` for indicators and `asc` for `ticker`.
       parameters:
         - { name: asset_type, in: query, schema: { type: string, enum: [stock, fii] } }
         - { name: sector, in: query, description: Exact sector or FII segment, schema: { type: string }, example: Logística }
         - { name: q, in: query, description: "Ticker prefix or any part of the name, case insensitive", schema: { type: string }, example: petr }
+        - { name: paying, in: query, description: "`true` keeps only assets with a positive `dy_12m_bps`, which leaves out FIIs still in development", schema: { type: boolean } }
+        - { name: dy_12m_bps_min, in: query, description: "Minimum `dy_12m_bps`, inclusive", schema: { type: integer } }
+        - { name: dy_12m_bps_max, in: query, description: "Maximum `dy_12m_bps`, inclusive", schema: { type: integer } }
+        - { name: payout_bps_min, in: query, description: "Minimum `payout_bps`, inclusive", schema: { type: integer } }
+        - { name: payout_bps_max, in: query, description: "Maximum `payout_bps`, inclusive", schema: { type: integer } }
+        - { name: p_vp_e2_min, in: query, description: "Minimum `p_vp_e2`, inclusive", schema: { type: integer } }
+        - { name: p_vp_e2_max, in: query, description: "Maximum `p_vp_e2`, inclusive", schema: { type: integer } }
+        - { name: p_l_e2_min, in: query, description: "Minimum `p_l_e2`, inclusive", schema: { type: integer } }
+        - { name: p_l_e2_max, in: query, description: "Maximum `p_l_e2`, inclusive", schema: { type: integer } }
+        - { name: roe_average_bps_min, in: query, description: "Minimum `roe_average_bps`, inclusive", schema: { type: integer } }
+        - { name: roe_average_bps_max, in: query, description: "Maximum `roe_average_bps`, inclusive", schema: { type: integer } }
+        - { name: earnings_cagr_bps_min, in: query, description: "Minimum `earnings_cagr_bps`, inclusive", schema: { type: integer } }
+        - { name: earnings_cagr_bps_max, in: query, description: "Maximum `earnings_cagr_bps`, inclusive", schema: { type: integer } }
+        - { name: equity_cagr_bps_min, in: query, description: "Minimum `equity_cagr_bps`, inclusive", schema: { type: integer } }
+        - { name: equity_cagr_bps_max, in: query, description: "Maximum `equity_cagr_bps`, inclusive", schema: { type: integer } }
+        - { name: net_margin_bps_min, in: query, description: "Minimum `net_margin_bps`, inclusive", schema: { type: integer } }
+        - { name: net_margin_bps_max, in: query, description: "Maximum `net_margin_bps`, inclusive", schema: { type: integer } }
+        - { name: net_debt_to_equity_bps_min, in: query, description: "Minimum `net_debt_to_equity_bps`, inclusive", schema: { type: integer } }
+        - { name: net_debt_to_equity_bps_max, in: query, description: "Maximum `net_debt_to_equity_bps`, inclusive", schema: { type: integer } }
+        - { name: liquidity_cents_min, in: query, description: "Minimum `liquidity_cents`, inclusive", schema: { type: integer } }
+        - { name: liquidity_cents_max, in: query, description: "Maximum `liquidity_cents`, inclusive", schema: { type: integer } }
+        - { name: years_paying_min, in: query, description: "Minimum `years_paying`, inclusive", schema: { type: integer } }
+        - { name: years_paying_max, in: query, description: "Maximum `years_paying`, inclusive", schema: { type: integer } }
+        - { name: years_with_profit_min, in: query, description: "Minimum `years_with_profit`, inclusive", schema: { type: integer } }
+        - { name: years_with_profit_max, in: query, description: "Maximum `years_with_profit`, inclusive", schema: { type: integer } }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [ticker, dy_12m_bps, payout_bps, p_vp_e2, p_l_e2, roe_average_bps, earnings_cagr_bps, equity_cagr_bps, net_margin_bps, net_debt_to_equity_bps, liquidity_cents, years_paying, years_with_profit] }
+        - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
         - { name: page, in: query, schema: { type: integer } }
         - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
       responses:
@@ -1674,11 +1866,20 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/Asset" }
                   meta: { $ref: "#/components/schemas/Pagination" }
+        "400":
+          description: An indicator filter that is not an integer (`invalid_filter`) or an unknown sort (`invalid_sort`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /assets/{ticker}:
     get:
       tags: [Assets]
-      summary: Show an asset with its latest quote
-      description: Inactive assets are shown too, so a position in a delisted asset can still be opened.
+      summary: Show an asset with its latest quote, FII report and distributions
+      description: |
+        Inactive assets are shown too, so a position in a delisted asset can still be opened. `distributions` lists the
+        last 24 months by record date, newest first: FII income from the CVM monthly report (the month's dividend yield
+        times the book value per share, with the record date on the month's last day and no payment date) and the
+        stock distributions the current user recorded by hand.
       parameters:
         - { name: ticker, in: path, required: true, description: Case insensitive, schema: { type: string }, example: PETR4 }
       responses:
@@ -2127,18 +2328,119 @@ components:
         iof_ignored: { type: boolean }
     Asset:
       type: object
-      required: [ticker, name, asset_type, sector]
+      required: [ticker, name, asset_type, sector, indicators]
       properties:
         ticker: { type: string, pattern: "^[A-Z][A-Z0-9]{3}[0-9]{1,2}B?$", example: PETR4 }
         name: { type: string, example: PETROLEO BRASILEIRO S.A. PETROBRAS }
         asset_type: { type: string, enum: [stock, fii] }
         sector: { type: [string, "null"], description: "Company sector or FII segment, from CVM", example: Petróleo e Gás }
+        indicators:
+          description: Null until the next daily refresh after the asset is listed
+          oneOf:
+            - { $ref: "#/components/schemas/AssetIndicators" }
+            - { type: "null" }
+    AssetIndicators:
+      type: object
+      description: |
+        Computed every weekday from the latest quote, the CVM distributions of FIIs and the companies' annual
+        statements (DFP, consolidated when available). Any indicator is null when its data is missing or its base is
+        zero or negative. `_bps` values are hundredths of a percent and `_e2` values are hundredths. Informational
+        only, never investment advice.
+      required: [computed_on, price_cents, dy_12m_bps, distribution_average_e8, distribution_median_e8, years_paying, payout_bps, p_vp_e2,
+        p_l_e2, roe_average_bps, earnings_cagr_bps, equity_cagr_bps, years_with_profit, net_margin_bps, net_debt_to_equity_bps,
+        liquidity_cents, financial_years]
+      properties:
+        computed_on: { type: string, format: date }
+        price_cents: { type: [integer, "null"], description: Latest close }
+        dy_12m_bps: { type: [integer, "null"], description: "FIIs: CVM distributions of the last 12 months over the price; stocks: dividends and JCP paid in the last fiscal year (cash flow statement) over the market value" }
+        distribution_average_e8: { type: [integer, "null"], description: "FIIs: average monthly distribution per share in the last 12 months" }
+        distribution_median_e8: { type: [integer, "null"], description: "FIIs: median monthly distribution per share in the last 12 months" }
+        years_paying: { type: [integer, "null"], description: Consecutive calendar (FIIs) or fiscal (stocks) years with distributions up to the latest one }
+        payout_bps: { type: [integer, "null"], description: "Stocks: dividends and JCP paid over the net income of the last fiscal year" }
+        p_vp_e2: { type: [integer, "null"], description: "Price to book value: FIIs from the latest monthly report, stocks from the market value over equity" }
+        p_l_e2: { type: [integer, "null"], description: "Stocks: market value over the last fiscal year's net income" }
+        roe_average_bps: { type: [integer, "null"], description: "Stocks: average net income over equity of the last 5 fiscal years" }
+        earnings_cagr_bps: { type: [integer, "null"], description: "Stocks: yearly growth of net income over up to 5 years (at least 2)" }
+        equity_cagr_bps: { type: [integer, "null"], description: "Stocks: yearly growth of equity over up to 5 years (at least 2)" }
+        years_with_profit: { type: [integer, "null"], description: "Stocks: fiscal years with a profit among the last 5" }
+        net_margin_bps: { type: [integer, "null"], description: "Stocks: net income over revenue of the last fiscal year" }
+        net_debt_to_equity_bps: { type: [integer, "null"], description: "Stocks: loans minus cash and short-term investments over equity; null for banks" }
+        liquidity_cents: { type: [integer, "null"], description: Average daily traded volume in the last 30 days }
+        financial_years: { type: [integer, "null"], description: "Stocks: fiscal years among the last 5 with statements" }
+    IncomeSimulation:
+      type: object
+      required: [kind, ticker, price_cents, monthly_income_per_share_e8, monthly_yield_bps, reinvest, months, summary]
+      properties:
+        kind: { type: string, enum: [income] }
+        ticker: { type: [string, "null"] }
+        price_cents: { type: [integer, "null"] }
+        monthly_income_per_share_e8: { type: [integer, "null"] }
+        monthly_yield_bps: { type: [integer, "null"] }
+        reinvest: { type: boolean }
+        months:
+          type: array
+          items:
+            type: object
+            required: [month, contributed_cents, shares, value_cents, income_cents, received_cents]
+            properties:
+              month: { type: integer, minimum: 1 }
+              contributed_cents: { type: integer }
+              shares: { type: [integer, "null"], description: Null without `ticker` }
+              value_cents: { type: integer, description: Shares at the constant price plus the money not yet invested }
+              income_cents: { type: integer, description: Income of the month }
+              received_cents: { type: integer, description: Income received up to the month }
+        summary:
+          type: object
+          required: [contributed_cents, value_cents, monthly_income_cents, received_cents, target_monthly_income_cents, shares_for_target,
+            capital_for_target_cents, months_to_target]
+          properties:
+            contributed_cents: { type: integer }
+            value_cents: { type: integer }
+            monthly_income_cents: { type: integer }
+            received_cents: { type: integer }
+            target_monthly_income_cents: { type: [integer, "null"] }
+            shares_for_target: { type: [integer, "null"] }
+            capital_for_target_cents: { type: [integer, "null"], description: Money needed today to reach the target }
+            months_to_target: { type: [integer, "null"], description: First simulated month whose income reaches the target }
+    GrowthSimulation:
+      type: object
+      required: [kind, annual_rate_bps, monthly_rate_e8, months, summary]
+      properties:
+        kind: { type: string, enum: [growth] }
+        annual_rate_bps: { type: integer }
+        monthly_rate_e8: { type: integer, description: Equivalent monthly rate in hundred-millionths }
+        months:
+          type: array
+          items: { $ref: "#/components/schemas/GrowthMonth" }
+        summary:
+          type: object
+          required: [contributed_cents, value_cents, earnings_cents]
+          properties:
+            contributed_cents: { type: integer }
+            value_cents: { type: integer }
+            earnings_cents: { type: integer }
+    GrowthMonth:
+      type: object
+      required: [month, contributed_cents, value_cents, earnings_cents]
+      properties:
+        month: { type: integer, minimum: 1 }
+        contributed_cents: { type: integer }
+        value_cents: { type: integer }
+        earnings_cents: { type: integer }
     AssetDetail:
       allOf:
         - $ref: "#/components/schemas/Asset"
         - type: object
-          required: [isin, cnpj, active, quote]
+          required: [isin, cnpj, active, quote, fund_report, distributions]
           properties:
+            fund_report:
+              description: Latest CVM monthly report; FIIs only
+              oneOf:
+                - { $ref: "#/components/schemas/FundReport" }
+                - { type: "null" }
+            distributions:
+              type: array
+              items: { $ref: "#/components/schemas/AssetDistribution" }
             isin: { type: string, example: BRPETRACNPR6 }
             cnpj: { type: [string, "null"], pattern: "^[0-9]{14}$", description: "Digits only; null until matched with CVM" }
             active: { type: boolean, description: Has a quote in the last 30 days }
@@ -2146,6 +2448,43 @@ components:
               oneOf:
                 - { $ref: "#/components/schemas/AssetQuote" }
                 - { type: "null" }
+    FundReport:
+      type: object
+      required: [reference_month, equity_cents, book_value_per_share_e8, shares_count, shareholders_count]
+      properties:
+        reference_month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-09" }
+        equity_cents: { type: integer }
+        book_value_per_share_e8: { type: integer, description: Book value per share in hundred-millionths of a real }
+        shares_count: { type: integer }
+        shareholders_count: { type: integer }
+    AssetDistribution:
+      type: object
+      required: [id, ticker, kind, source, record_on, paid_on, amount_per_share_e8, net_amount_per_share_e8]
+      properties:
+        id: { type: string, format: uuid }
+        ticker: { type: string, example: PETR4 }
+        kind: { type: string, enum: [fii_income, dividend, jcp] }
+        source: { type: string, enum: [cvm, manual], description: "`cvm`: FII monthly report; `manual`: recorded by the current user" }
+        record_on: { type: string, format: date, description: Record date (data com) }
+        paid_on: { type: [string, "null"], format: date, description: Null for FII income from CVM }
+        amount_per_share_e8: { type: integer, minimum: 1, description: Gross value per share in hundred-millionths of a real }
+        net_amount_per_share_e8: { type: integer, minimum: 1, description: JCP net of the 15% income tax; the gross value otherwise }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AssetDistributionInput:
+      type: object
+      properties:
+        ticker: { type: string, description: A stock of the user's portfolio; only on create }
+        kind: { type: string, enum: [dividend, jcp] }
+        record_on: { type: string, format: date }
+        paid_on: { type: string, format: date, description: On or after `record_on` }
+        amount_per_share_e8: { type: integer, minimum: 1, maximum: 100000000000000 }
+    IncomeMonth:
+      type: object
+      required: [month, amount_cents]
+      properties:
+        month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
+        amount_cents: { type: integer, minimum: 0 }
     AssetQuote:
       type: object
       required: [quoted_on, close_cents, volume_cents, trades_count]
@@ -2267,11 +2606,11 @@ components:
             negative_months_count: { type: integer, minimum: 0 }
     ProjectionMonth:
       type: object
-      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative, reserve_cents, expense_by_category]
+      required: [month, opening_cents, income_cents, expense_cents, fixed_expense_cents, variable_expense_cents, closing_cents, savings_cents, negative, reserve_cents, investment_income_cents, investments_value_cents, net_worth_cents, expense_by_category]
       properties:
         month: { type: string, example: "2026-11" }
         opening_cents: { type: integer }
-        income_cents: { type: integer }
+        income_cents: { type: integer, description: Income entries plus `investment_income_cents` }
         expense_cents: { type: integer }
         fixed_expense_cents: { type: integer }
         variable_expense_cents: { type: integer }
@@ -2279,6 +2618,9 @@ components:
         savings_cents: { type: integer, description: Income minus expenses from the first projected month through this one; may be negative }
         negative: { type: boolean, description: The month closes below zero }
         reserve_cents: { type: integer, description: Net value of the emergency reserve on the month's last day, as in `GET /reserve/projection` }
+        investment_income_cents: { type: integer, minimum: 0, description: Forecast distributions of the portfolio, as in `GET /portfolio/income`; zero up to the current month or with `include_investment_income=false` }
+        investments_value_cents: { type: integer, minimum: 0, description: "Portfolio value as in `GET /portfolio/history`; months after the current one repeat today's value, with no forecast appreciation" }
+        net_worth_cents: { type: integer, description: "`closing_cents` plus `reserve_cents` plus `investments_value_cents`" }
         expense_by_category:
           type: array
           description: Expenses of the month summed by category, largest first (ties by key)
@@ -2413,6 +2755,15 @@ components:
             required: [data]
             properties:
               data: { $ref: "#/components/schemas/InvestmentTransaction" }
+    AssetDistribution:
+      description: Distribution
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/AssetDistribution" }
     InvestmentPosition:
       description: Investment position
       content:
