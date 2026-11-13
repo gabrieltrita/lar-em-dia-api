@@ -29,7 +29,8 @@ RSpec.describe "market_data tasks" do
     expect(MarketData::Backfill).to have_received(:call).with(from: Date.new(2025, 1, 1), to: Date.new(2026, 10, 12))
   end
 
-  it "loads the FII monthly reports of each year from the given one and prints the counts" do
+  it "loads the FII monthly reports of each year from the given one, refreshes the indicators and prints the counts" do
+    allow(AssetIndicators).to receive(:refresh).and_return(4)
     registry = MarketData::CvmFunds::Registry.new(funds: [], reports: [])
     allow(MarketData::CvmFunds).to receive(:fetch).and_return(registry)
     allow(MarketData::FundReportSync).to receive(:call).and_return(MarketData::FundReportSync::Result.new(fund_reports_saved: 2,
@@ -37,7 +38,8 @@ RSpec.describe "market_data tasks" do
 
     expect do
       travel_to(Date.new(2026, 11, 12)) { Rake::Task["market_data:fund_reports"].execute(Rake::TaskArguments.new([ :year ], [ "2025" ])) }
-    end.to output("#{[ 2025, 2026 ].map { |year| { fund_reports_saved: 2, distributions_saved: 1, year: year } }.to_json}\n").to_stdout
+    end.to output("#{{ years: [ 2025, 2026 ].map { |year| { fund_reports_saved: 2, distributions_saved: 1, year: year } },
+      indicators_saved: 4 }.to_json}\n").to_stdout
     expect(MarketData::CvmFunds).to have_received(:fetch).with(2025)
     expect(MarketData::CvmFunds).to have_received(:fetch).with(2026)
   end
