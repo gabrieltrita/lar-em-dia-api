@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_005000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_007000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -28,6 +28,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_005000) do
     t.index ["asset_id", "kind", "record_on"], name: "index_asset_distributions_on_cvm_record", unique: true, where: "((source)::text = 'cvm'::text)"
     t.index ["asset_id", "record_on"], name: "index_asset_distributions_on_asset_id_and_record_on"
     t.index ["user_id", "record_on"], name: "index_asset_distributions_on_user_id_and_record_on"
+  end
+
+  create_table "asset_indicators", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "asset_id", null: false
+    t.date "computed_on", null: false
+    t.bigint "price_cents"
+    t.bigint "dy_12m_bps"
+    t.bigint "distribution_average_e8"
+    t.bigint "distribution_median_e8"
+    t.integer "years_paying"
+    t.bigint "payout_bps"
+    t.bigint "p_vp_e2"
+    t.bigint "p_l_e2"
+    t.bigint "roe_average_bps"
+    t.bigint "earnings_cagr_bps"
+    t.bigint "equity_cagr_bps"
+    t.integer "years_with_profit"
+    t.bigint "net_margin_bps"
+    t.bigint "net_debt_to_equity_bps"
+    t.bigint "liquidity_cents"
+    t.integer "financial_years"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id"], name: "index_asset_indicators_on_asset_id", unique: true
   end
 
   create_table "asset_quotes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -94,6 +118,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_005000) do
     t.string "default_nature"
     t.index ["key"], name: "index_categories_on_key", unique: true
     t.index ["kind", "position"], name: "index_categories_on_kind_and_position"
+  end
+
+  create_table "company_financials", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "cnpj", null: false
+    t.integer "fiscal_year", null: false
+    t.bigint "revenue_cents", null: false
+    t.bigint "net_income_cents", null: false
+    t.bigint "equity_cents", null: false
+    t.bigint "net_debt_cents"
+    t.bigint "dividends_paid_cents"
+    t.bigint "shares_count"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["cnpj", "fiscal_year"], name: "index_company_financials_on_cnpj_and_fiscal_year", unique: true
   end
 
   create_table "consents", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -279,6 +317,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_005000) do
 
   add_foreign_key "asset_distributions", "assets"
   add_foreign_key "asset_distributions", "users"
+  add_foreign_key "asset_indicators", "assets"
   add_foreign_key "asset_quotes", "assets"
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "balances", "users"

@@ -15,6 +15,10 @@ module MarketData
       new(uri).zip_lines(name, &)
     end
 
+    def self.zip_entry_lines(uri, names, &)
+      new(uri).zip_entry_lines(names, &)
+    end
+
     def self.json(uri)
       new(uri).json
     end
@@ -40,6 +44,17 @@ module MarketData
     def zip_lines(name, &)
       body = fetch
       body && each_line(Zip::File.open_buffer(StringIO.new(body)).find_entry(name), &)
+    rescue *FETCH_ERRORS => e
+      fail_with(e)
+    end
+
+    def zip_entry_lines(names)
+      body = fetch
+      return unless body
+
+      zip = Zip::File.open_buffer(StringIO.new(body))
+      names.each { |name| each_line(zip.find_entry(name)) { |line| yield name, line } }
+      true
     rescue *FETCH_ERRORS => e
       fail_with(e)
     end

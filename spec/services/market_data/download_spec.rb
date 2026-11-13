@@ -105,4 +105,25 @@ RSpec.describe MarketData::Download do
       expect(lines).to eq([ "12\n" ])
     end
   end
+  describe ".zip_entry_lines" do
+    it "yields the lines of several entries with their names, in order" do
+      stub_request(:get, url).to_return(body: zip_of("a.csv" => "one\ntwo\n", "b.csv" => "three\n", "c.csv" => "skipped\n"))
+      lines = []
+
+      expect(described_class.zip_entry_lines(uri, %w[b.csv a.csv]) { |name, line| lines << [ name, line ] }).to be(true)
+      expect(lines).to eq([ [ "b.csv", "three\n" ], [ "a.csv", "one\n" ], [ "a.csv", "two\n" ] ])
+    end
+
+    it "returns nil when the file does not exist yet" do
+      stub_request(:get, url).to_return(status: 404)
+
+      expect(described_class.zip_entry_lines(uri, %w[a.csv]) { |_name, _line| nil }).to be_nil
+    end
+
+    it "fails when an entry is missing" do
+      stub_request(:get, url).to_return(body: zip_of("a.csv" => "one"))
+
+      expect { described_class.zip_entry_lines(uri, %w[a.csv b.csv]) { |_name, _line| nil } }.to raise_error(MarketData::Unavailable)
+    end
+  end
 end
