@@ -43,6 +43,15 @@ RSpec.describe "Asset screener", type: :request do
     expect(tickers(sort: "properties_count", asset_type: "fii")).to eq(%w[HGLG11 BTLG11])
   end
 
+  it "hides single-property and development FIIs while keeping funds without that data" do
+    create(:asset_indicator, asset: create(:asset, :fii, ticker: "AJFI11"), properties_count: 1, development_bps: 0)
+    create(:asset_indicator, asset: create(:asset, :fii, ticker: "BLDG11"), properties_count: 3, development_bps: 8_000)
+    high.update!(properties_count: 12, development_bps: 5_000)
+
+    expect(tickers(asset_type: "fii", hide_single_property: "true")).to eq(%w[BLDG11 BTLG11 HGLG11])
+    expect(tickers(asset_type: "fii", hide_development: "true")).to eq(%w[AJFI11 BTLG11 HGLG11])
+  end
+
   it "rejects an unknown fund category" do
     get "/api/v1/assets", params: { fund_category: "brick,land" }, headers: headers
 

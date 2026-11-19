@@ -1862,6 +1862,8 @@ paths:
         - { name: largest_tenant_bps_max, in: query, description: "Maximum `largest_tenant_bps`, inclusive", schema: { type: integer } }
         - { name: months_paying_12m_min, in: query, description: "Minimum `months_paying_12m`, inclusive", schema: { type: integer } }
         - { name: months_paying_12m_max, in: query, description: "Maximum `months_paying_12m`, inclusive", schema: { type: integer } }
+        - { name: hide_single_property, in: query, description: "`true` leaves out FIIs whose latest quarterly report lists a single property for rent; funds without that data stay", schema: { type: boolean } }
+        - { name: hide_development, in: query, description: "`true` leaves out FIIs with more than half of the invested total in land, construction or properties for sale; funds without that data stay", schema: { type: boolean } }
         - { name: fund_category, in: query, description: "FIIs: comma-separated `fund_category` values to keep (brick, paper, fund_of_funds, hybrid)", schema: { type: string }, example: "brick,hybrid" }
         - name: sort
           in: query

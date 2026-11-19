@@ -6,6 +6,7 @@ class AssetScreener
   ].freeze
   SORTS = (RANGES + %i[ticker]).freeze
   DIRECTIONS = %w[asc desc].freeze
+  DEVELOPMENT_LIMIT = 5_000
 
   attr_reader :error
 
@@ -21,6 +22,8 @@ class AssetScreener
     scope = scope.left_joins(:indicator).includes(:indicator)
     scope = scope.where(asset_indicators: { dy_12m_bps: 1.. }) if @params[:paying] == "true"
     scope = scope.where(asset_indicators: { fund_category: categories }) if categories.any?
+    scope = scope.where.not(asset_indicators: { properties_count: 1 }).or(scope.where(asset_indicators: { properties_count: nil })) if @params[:hide_single_property] == "true"
+    scope = scope.where(asset_indicators: { development_bps: [ nil, ..DEVELOPMENT_LIMIT ] }) if @params[:hide_development] == "true"
     scope = bounds.reduce(scope) { |filtered, (field, side, value)| filtered.where(asset_indicators: { field => range(side, integer(value)) }) }
     sorted(scope)
   end
