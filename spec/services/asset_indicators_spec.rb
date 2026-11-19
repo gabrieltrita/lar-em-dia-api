@@ -44,6 +44,16 @@ RSpec.describe AssetIndicators do
         years_paying: 1, p_vp_e2: nil)
     end
 
+    it "counts no years paying when the fund stopped paying before last year" do
+      other = create(:asset, :fii)
+      create(:asset_distribution, asset: other, record_on: Date.new(2024, 10, 31), amount_per_share_e8: 50_000_000)
+      create(:asset_distribution, asset: other, record_on: Date.new(2023, 10, 31), amount_per_share_e8: 50_000_000)
+
+      refresh
+
+      expect(other.reload.indicator).to have_attributes(dy_12m_bps: nil, years_paying: 0)
+    end
+
     it "leaves the income indicators empty without distributions" do
       other = create(:asset, :fii)
 
@@ -103,6 +113,14 @@ RSpec.describe AssetIndicators do
 
       expect(preferred.reload.indicator).to have_attributes(dy_12m_bps: nil, payout_bps: nil, p_vp_e2: nil, p_l_e2: nil, net_margin_bps: nil,
         net_debt_to_equity_bps: nil, roe_average_bps: nil, earnings_cagr_bps: nil, equity_cagr_bps: nil, years_with_profit: 3)
+    end
+
+    it "counts no years paying for a company that never paid dividends" do
+      CompanyFinancial.where(cnpj: cnpj).update_all(dividends_paid_cents: 0)
+
+      refresh
+
+      expect(preferred.reload.indicator).to have_attributes(years_paying: 0, dy_12m_bps: 0, payout_bps: 0)
     end
 
     it "needs two years between the statements to compute growth" do

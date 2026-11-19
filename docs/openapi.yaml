@@ -2355,7 +2355,7 @@ components:
         dy_12m_bps: { type: [integer, "null"], description: "FIIs: CVM distributions of the last 12 months over the price; stocks: dividends and JCP paid in the last fiscal year (cash flow statement) over the market value" }
         distribution_average_e8: { type: [integer, "null"], description: "FIIs: average monthly distribution per share in the last 12 months" }
         distribution_median_e8: { type: [integer, "null"], description: "FIIs: median monthly distribution per share in the last 12 months" }
-        years_paying: { type: [integer, "null"], description: Consecutive calendar (FIIs) or fiscal (stocks) years with distributions up to the latest one }
+        years_paying: { type: [integer, "null"], description: Consecutive calendar (FIIs) or fiscal (stocks) years with distributions up to the latest one; 0 for a FII whose latest distribution is older than last year }
         payout_bps: { type: [integer, "null"], description: "Stocks: dividends and JCP paid over the net income of the last fiscal year" }
         p_vp_e2: { type: [integer, "null"], description: "Price to book value: FIIs from the latest monthly report, stocks from the market value over equity" }
         p_l_e2: { type: [integer, "null"], description: "Stocks: market value over the last fiscal year's net income" }

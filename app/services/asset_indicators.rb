@@ -48,7 +48,7 @@ class AssetIndicators
       dy_12m_bps: ratio(amounts.presence&.sum, price&.*(AssetDistribution::E8_PER_CENT), BPS),
       distribution_average_e8: ratio(amounts.presence&.sum, amounts.size, 1),
       distribution_median_e8: median(amounts),
-      years_paying: consecutive_years(paying_years.fetch(asset.id, [])),
+      years_paying: current_streak(paying_years.fetch(asset.id, [])),
       p_vp_e2: ratio(price&.*(AssetDistribution::E8_PER_CENT), fund_reports[asset.id]&.book_value_per_share_e8, E2)
     }
   end
@@ -110,6 +110,10 @@ class AssetIndicators
     sorted = amounts.sort
     middle = sorted.size / 2
     sorted.size.odd? ? sorted[middle] : ((sorted[middle - 1] + sorted[middle]).to_r / 2).round
+  end
+
+  def current_streak(years)
+    years.max.to_i >= @today.year - 1 ? consecutive_years(years) : 0
   end
 
   def consecutive_years(years)
