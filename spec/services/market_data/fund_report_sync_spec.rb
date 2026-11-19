@@ -4,7 +4,7 @@ RSpec.describe MarketData::FundReportSync do
   def report(**attributes)
     MarketData::CvmFunds::Report.new(
       cnpj: "11728688000147", reference_month: Date.new(2026, 9, 1), equity_cents: 754_601_779_739, book_value_per_share_e8: 16_547_663_017,
-      shares_count: 45_601_713, shareholders_count: 613_837, income_per_share_e8: 116_691_920, **attributes
+      shares_count: 45_601_713, shareholders_count: 613_837, income_per_share_e8: 116_691_920, category: "brick", development_bps: 0, **attributes
     )
   end
 

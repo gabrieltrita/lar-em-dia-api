@@ -11,6 +11,7 @@ class Asset < ApplicationRecord
   has_many :fund_reports, dependent: :destroy
   has_one :latest_fund_report, -> { order(reference_month: :desc) }, class_name: "FundReport", inverse_of: :asset
   has_one :indicator, class_name: "AssetIndicator", dependent: :destroy
+  has_one :fund_composition, dependent: :destroy
   has_many :financials, class_name: "CompanyFinancial", primary_key: :cnpj, foreign_key: :cnpj, inverse_of: false
 
   enum :asset_type, { fii: "fii", stock: "stock" }, validate: true

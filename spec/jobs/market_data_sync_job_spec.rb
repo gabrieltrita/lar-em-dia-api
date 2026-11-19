@@ -39,6 +39,21 @@ RSpec.describe MarketDataSyncJob do
     expect(Rails.logger).to have_received(:info).with(hash_including(status: "synced", fund_reports_saved: 14, distributions_saved: 14))
   end
 
+  it "imports the FII holdings and properties with the registry and computes their indicators" do
+    stub_b3_quotes
+    stub_cvm_registry
+
+    described_class.perform_now("2026-11-11", with_registry: true)
+
+    hglg = Asset.find_by!(ticker: "HGLG11")
+    expect(hglg.fund_composition).to have_attributes(reference_on: Date.new(2026, 9, 30), largest_tenant_bps: 466)
+    expect(hglg.fund_composition.properties.count).to eq(36)
+    expect(hglg.latest_fund_report).to have_attributes(category: "brick", development_bps: 0)
+    expect(hglg.indicator).to have_attributes(fund_category: "brick", properties_count: 36, largest_tenant_bps: 466, months_paying_12m: 11)
+    expect(Asset.find_by!(ticker: "MXRF11").indicator).to have_attributes(fund_category: "paper", properties_count: 0, development_bps: 556)
+    expect(Rails.logger).to have_received(:info).with(hash_including(portfolios_saved: 2))
+  end
+
   it "imports last year's company statements with the registry and computes the indicators" do
     stub_b3_quotes
     stub_cvm_registry

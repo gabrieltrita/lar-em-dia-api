@@ -32,6 +32,24 @@ RSpec.describe "Asset screener", type: :request do
     expect(tickers(sort: "ticker")).to eq(%w[BTLG11 HGLG11 PETR4 VALE3])
   end
 
+  it "filters FIIs by category, diversification and paying months" do
+    high.update!(fund_category: "brick", properties_count: 12, largest_property_bps: 1_500, months_paying_12m: 12, development_bps: 0)
+    empty.update!(fund_category: "paper", properties_count: 0, months_paying_12m: 11)
+
+    expect(tickers(fund_category: "brick")).to eq(%w[HGLG11])
+    expect(tickers(fund_category: "brick, paper")).to eq(%w[BTLG11 HGLG11])
+    expect(tickers(properties_count_min: "2", largest_property_bps_max: "3000")).to eq(%w[HGLG11])
+    expect(tickers(months_paying_12m_min: "12", development_bps_max: "5000")).to eq(%w[HGLG11])
+    expect(tickers(sort: "properties_count", asset_type: "fii")).to eq(%w[HGLG11 BTLG11])
+  end
+
+  it "rejects an unknown fund category" do
+    get "/api/v1/assets", params: { fund_category: "brick,land" }, headers: headers
+
+    expect(response).to have_http_status(:bad_request)
+    expect(json["error"]["code"]).to eq("invalid_filter")
+  end
+
   it "rejects a filter that is not an integer" do
     get "/api/v1/assets", params: { p_l_e2_max: "5.5" }, headers: headers
 

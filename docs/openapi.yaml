@@ -1848,9 +1848,24 @@ paths:
         - { name: years_paying_max, in: query, description: "Maximum `years_paying`, inclusive", schema: { type: integer } }
         - { name: years_with_profit_min, in: query, description: "Minimum `years_with_profit`, inclusive", schema: { type: integer } }
         - { name: years_with_profit_max, in: query, description: "Maximum `years_with_profit`, inclusive", schema: { type: integer } }
+        - { name: development_bps_min, in: query, description: "Minimum `development_bps`, inclusive", schema: { type: integer } }
+        - { name: development_bps_max, in: query, description: "Maximum `development_bps`, inclusive", schema: { type: integer } }
+        - { name: properties_count_min, in: query, description: "Minimum `properties_count`, inclusive", schema: { type: integer } }
+        - { name: properties_count_max, in: query, description: "Maximum `properties_count`, inclusive", schema: { type: integer } }
+        - { name: largest_property_bps_min, in: query, description: "Minimum `largest_property_bps`, inclusive", schema: { type: integer } }
+        - { name: largest_property_bps_max, in: query, description: "Maximum `largest_property_bps`, inclusive", schema: { type: integer } }
+        - { name: vacancy_bps_min, in: query, description: "Minimum `vacancy_bps`, inclusive", schema: { type: integer } }
+        - { name: vacancy_bps_max, in: query, description: "Maximum `vacancy_bps`, inclusive", schema: { type: integer } }
+        - { name: delinquency_bps_min, in: query, description: "Minimum `delinquency_bps`, inclusive", schema: { type: integer } }
+        - { name: delinquency_bps_max, in: query, description: "Maximum `delinquency_bps`, inclusive", schema: { type: integer } }
+        - { name: largest_tenant_bps_min, in: query, description: "Minimum `largest_tenant_bps`, inclusive", schema: { type: integer } }
+        - { name: largest_tenant_bps_max, in: query, description: "Maximum `largest_tenant_bps`, inclusive", schema: { type: integer } }
+        - { name: months_paying_12m_min, in: query, description: "Minimum `months_paying_12m`, inclusive", schema: { type: integer } }
+        - { name: months_paying_12m_max, in: query, description: "Maximum `months_paying_12m`, inclusive", schema: { type: integer } }
+        - { name: fund_category, in: query, description: "FIIs: comma-separated `fund_category` values to keep (brick, paper, fund_of_funds, hybrid)", schema: { type: string }, example: "brick,hybrid" }
         - name: sort
           in: query
-          schema: { type: string, enum: [ticker, dy_12m_bps, payout_bps, p_vp_e2, p_l_e2, roe_average_bps, earnings_cagr_bps, equity_cagr_bps, net_margin_bps, net_debt_to_equity_bps, liquidity_cents, years_paying, years_with_profit] }
+          schema: { type: string, enum: [ticker, dy_12m_bps, payout_bps, p_vp_e2, p_l_e2, roe_average_bps, earnings_cagr_bps, equity_cagr_bps, net_margin_bps, net_debt_to_equity_bps, liquidity_cents, years_paying, years_with_profit, development_bps, properties_count, largest_property_bps, vacancy_bps, delinquency_bps, largest_tenant_bps, months_paying_12m] }
         - { name: direction, in: query, schema: { type: string, enum: [asc, desc] } }
         - { name: page, in: query, schema: { type: integer } }
         - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
@@ -1867,7 +1882,7 @@ paths:
                     items: { $ref: "#/components/schemas/Asset" }
                   meta: { $ref: "#/components/schemas/Pagination" }
         "400":
-          description: An indicator filter that is not an integer (`invalid_filter`) or an unknown sort (`invalid_sort`)
+          description: An indicator filter that is not an integer or an unknown `fund_category` (`invalid_filter`), or an unknown sort (`invalid_sort`)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2348,7 +2363,8 @@ components:
         only, never investment advice.
       required: [computed_on, price_cents, dy_12m_bps, distribution_average_e8, distribution_median_e8, years_paying, payout_bps, p_vp_e2,
         p_l_e2, roe_average_bps, earnings_cagr_bps, equity_cagr_bps, years_with_profit, net_margin_bps, net_debt_to_equity_bps,
-        liquidity_cents, financial_years]
+        liquidity_cents, financial_years, fund_category, development_bps, properties_count, largest_property_bps, vacancy_bps,
+        delinquency_bps, largest_tenant_bps, months_paying_12m]
       properties:
         computed_on: { type: string, format: date }
         price_cents: { type: [integer, "null"], description: Latest close }
@@ -2367,6 +2383,14 @@ components:
         net_debt_to_equity_bps: { type: [integer, "null"], description: "Stocks: loans minus cash and short-term investments over equity; null for banks" }
         liquidity_cents: { type: [integer, "null"], description: Average daily traded volume in the last 30 days }
         financial_years: { type: [integer, "null"], description: "Stocks: fiscal years among the last 5 with statements" }
+        fund_category: { type: [string, "null"], enum: [brick, paper, fund_of_funds, hybrid, null], description: "FIIs: what the latest monthly report holds, by value: properties and real estate companies (brick), real estate receivables and credit notes (paper), other FIIs (fund_of_funds), each with at least two thirds, or a mix (hybrid)" }
+        development_bps: { type: [integer, "null"], description: "FIIs: land, properties under construction and properties for sale over the invested total of the latest monthly report" }
+        properties_count: { type: [integer, "null"], description: "FIIs: properties for rent, finished or under construction, in the latest quarterly report; 1 means a single-property fund" }
+        largest_property_bps: { type: [integer, "null"], description: "FIIs: the largest share of the fund's revenue coming from one property" }
+        vacancy_bps: { type: [integer, "null"], description: "FIIs: vacancy of the finished properties for rent, weighted by area" }
+        delinquency_bps: { type: [integer, "null"], description: "FIIs: delinquency of the properties for rent, weighted by their share of revenue" }
+        largest_tenant_bps: { type: [integer, "null"], description: "FIIs: the largest share of the fund's revenue coming from one tenant (CVM lists tenants above 5%)" }
+        months_paying_12m: { type: [integer, "null"], description: "FIIs: months with a CVM distribution in the last 12" }
     IncomeSimulation:
       type: object
       required: [kind, ticker, price_cents, monthly_income_per_share_e8, monthly_yield_bps, reinvest, months, summary]
@@ -2431,8 +2455,13 @@ components:
       allOf:
         - $ref: "#/components/schemas/Asset"
         - type: object
-          required: [isin, cnpj, active, quote, fund_report, distributions]
+          required: [isin, cnpj, active, quote, fund_report, composition, distributions]
           properties:
+            composition:
+              description: Properties from the latest CVM quarterly report; FIIs with properties only
+              oneOf:
+                - { $ref: "#/components/schemas/FundComposition" }
+                - { type: "null" }
             fund_report:
               description: Latest CVM monthly report; FIIs only
               oneOf:
@@ -2448,10 +2477,31 @@ components:
               oneOf:
                 - { $ref: "#/components/schemas/AssetQuote" }
                 - { type: "null" }
+    FundComposition:
+      type: object
+      required: [reference_on, largest_tenant_bps, properties]
+      properties:
+        reference_on: { type: string, format: date, description: Last day of the quarter }
+        largest_tenant_bps: { type: [integer, "null"], description: The largest share of the fund's revenue coming from one tenant }
+        properties:
+          type: array
+          description: The largest share of revenue first
+          items:
+            type: object
+            required: [name, kind, area_m2, vacancy_bps, delinquency_bps, revenue_share_bps]
+            properties:
+              name: { type: string, example: HGLG Betim Business Park }
+              kind: { type: string, enum: [rent, rent_construction, sale, sale_construction] }
+              area_m2: { type: [integer, "null"] }
+              vacancy_bps: { type: [integer, "null"] }
+              delinquency_bps: { type: [integer, "null"] }
+              revenue_share_bps: { type: [integer, "null"], description: Share of the fund's revenue }
     FundReport:
       type: object
-      required: [reference_month, equity_cents, book_value_per_share_e8, shares_count, shareholders_count]
+      required: [reference_month, equity_cents, book_value_per_share_e8, shares_count, shareholders_count, category, development_bps]
       properties:
+        category: { type: [string, "null"], enum: [brick, paper, fund_of_funds, hybrid, null] }
+        development_bps: { type: [integer, "null"] }
         reference_month: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-09" }
         equity_cents: { type: integer }
         book_value_per_share_e8: { type: integer, description: Book value per share in hundred-millionths of a real }

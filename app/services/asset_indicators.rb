@@ -43,14 +43,39 @@ class AssetIndicators
   end
 
   def fund_figures(asset, price)
-    amounts = recent_distributions.fetch(asset.id, []).map(&:last)
+    recent = recent_distributions.fetch(asset.id, [])
+    amounts = recent.map(&:last)
+    report = fund_reports[asset.id]
     {
+      **composition_figures(compositions[asset.id]),
+      fund_category: report&.category,
+      development_bps: report&.development_bps,
+      months_paying_12m: recent.map { |_asset_id, record_on, _amount| record_on.beginning_of_month }.uniq.size,
       dy_12m_bps: ratio(amounts.presence&.sum, price&.*(AssetDistribution::E8_PER_CENT), BPS),
       distribution_average_e8: ratio(amounts.presence&.sum, amounts.size, 1),
       distribution_median_e8: median(amounts),
       years_paying: current_streak(paying_years.fetch(asset.id, [])),
-      p_vp_e2: ratio(price&.*(AssetDistribution::E8_PER_CENT), fund_reports[asset.id]&.book_value_per_share_e8, E2)
+      p_vp_e2: ratio(price&.*(AssetDistribution::E8_PER_CENT), report&.book_value_per_share_e8, E2)
     }
+  end
+
+  def composition_figures(composition)
+    return {} unless composition
+
+    income = composition.properties.select { |property| property.rent? || property.rent_construction? }
+    {
+      properties_count: income.size,
+      largest_property_bps: income.filter_map(&:revenue_share_bps).max,
+      vacancy_bps: weighted(income.select(&:rent?), :vacancy_bps, &:area_m2),
+      delinquency_bps: weighted(income, :delinquency_bps, &:revenue_share_bps),
+      largest_tenant_bps: composition.largest_tenant_bps
+    }
+  end
+
+  def weighted(properties, field)
+    pairs = properties.map { |property| [ property.public_send(field), yield(property).to_i ] }.select { |value, weight| value && weight.positive? }
+    total = pairs.sum(&:last)
+    (pairs.sum { |value, weight| value * weight }.to_r / total).round if total.positive?
   end
 
   def company_figures(asset, price)
@@ -139,7 +164,7 @@ class AssetIndicators
 
   def recent_distributions
     @recent_distributions ||= cvm_distributions.where(record_on: (@today << DISTRIBUTION_MONTHS)..@today)
-      .pluck(:asset_id, :amount_per_share_e8).group_by(&:first)
+      .pluck(:asset_id, :record_on, :amount_per_share_e8).group_by(&:first)
   end
 
   def paying_years
@@ -148,8 +173,12 @@ class AssetIndicators
   end
 
   def fund_reports
-    @fund_reports ||= FundReport.select("DISTINCT ON (asset_id) asset_id, book_value_per_share_e8").order(:asset_id, reference_month: :desc)
-      .index_by(&:asset_id)
+    @fund_reports ||= FundReport.select("DISTINCT ON (asset_id) asset_id, book_value_per_share_e8, category, development_bps")
+      .order(:asset_id, reference_month: :desc).index_by(&:asset_id)
+  end
+
+  def compositions
+    @compositions ||= FundComposition.includes(:properties).index_by(&:asset_id)
   end
 
   def financials
