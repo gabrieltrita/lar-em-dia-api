@@ -25,7 +25,7 @@ module MarketData
       return 0 if matched.empty?
 
       FundReport.upsert_all(matched.map { |report, asset_id| report_row(report, asset_id) }, unique_by: %i[asset_id reference_month],
-        update_only: %i[equity_cents book_value_per_share_e8 shares_count shareholders_count])
+        update_only: %i[equity_cents book_value_per_share_e8 shares_count shareholders_count category development_bps])
       matched.size
     end
 

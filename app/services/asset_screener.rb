@@ -1,10 +1,12 @@
 class AssetScreener
   RANGES = %i[
     dy_12m_bps payout_bps p_vp_e2 p_l_e2 roe_average_bps earnings_cagr_bps equity_cagr_bps net_margin_bps net_debt_to_equity_bps
-    liquidity_cents years_paying years_with_profit
+    liquidity_cents years_paying years_with_profit development_bps properties_count largest_property_bps vacancy_bps delinquency_bps
+    largest_tenant_bps months_paying_12m
   ].freeze
   SORTS = (RANGES + %i[ticker]).freeze
   DIRECTIONS = %w[asc desc].freeze
+  DEVELOPMENT_LIMIT = 5_000
 
   attr_reader :error
 
@@ -14,16 +16,27 @@ class AssetScreener
 
   def apply(scope)
     bounds = RANGES.flat_map { |field| %w[min max].map { |side| [ field, side, @params[:"#{field}_#{side}"] ] } }.select { |*, value| value.present? }
-    return fail_with("invalid_filter") unless bounds.all? { |*, value| integer(value) }
+    return fail_with("invalid_filter") unless bounds.all? { |*, value| integer(value) } && category_valid?
     return fail_with("invalid_sort") unless sort_valid?
 
     scope = scope.left_joins(:indicator).includes(:indicator)
     scope = scope.where(asset_indicators: { dy_12m_bps: 1.. }) if @params[:paying] == "true"
+    scope = scope.where(asset_indicators: { fund_category: categories }) if categories.any?
+    scope = scope.where.not(asset_indicators: { properties_count: 1 }).or(scope.where(asset_indicators: { properties_count: nil })) if @params[:hide_single_property] == "true"
+    scope = scope.where(asset_indicators: { development_bps: [ nil, ..DEVELOPMENT_LIMIT ] }) if @params[:hide_development] == "true"
     scope = bounds.reduce(scope) { |filtered, (field, side, value)| filtered.where(asset_indicators: { field => range(side, integer(value)) }) }
     sorted(scope)
   end
 
   private
+
+  def categories
+    @params[:fund_category].to_s.split(",").map(&:strip).compact_blank
+  end
+
+  def category_valid?
+    (categories - FundReport::CATEGORIES).empty?
+  end
 
   def sort_valid?
     sort = @params[:sort]

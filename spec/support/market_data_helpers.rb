@@ -3,6 +3,7 @@ module MarketDataHelpers
   FUNDS_URL = "https://dados.cvm.gov.br/dados/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_%d.zip".freeze
   COMPANIES_URL = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_%d.zip".freeze
   FINANCIALS_URL = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_%d.zip".freeze
+  PORTFOLIOS_URL = "https://dados.cvm.gov.br/dados/FII/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fii_%d.zip".freeze
 
   def market_data_file(name)
     file_fixture("market_data/#{name}").binread
@@ -22,6 +23,12 @@ module MarketDataHelpers
     stub_market_data(format(COMPANIES_URL, 2025), status: 404)
     stub_market_data(format(COMPANIES_URL, 2026), "fca_cia_aberta_2026.zip")
     stub_financials
+    stub_fund_portfolios
+  end
+
+  def stub_fund_portfolios
+    stub_market_data(format(PORTFOLIOS_URL, 2025), status: 404)
+    stub_market_data(format(PORTFOLIOS_URL, 2026), "inf_trimestral_fii_2026.zip")
   end
 
   def stub_financials
