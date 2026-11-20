@@ -38,7 +38,8 @@ class Category < ApplicationRecord
       taxes_fees: "Taxes and fees",
       other_expense: "Other expense",
       investment_contribution: "Investment contribution",
-      reserve_deposit: "Emergency reserve deposit"
+      reserve_deposit: "Emergency reserve deposit",
+      surplus_allocation: "Surplus allocation"
     }
   }.freeze
 

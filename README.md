@@ -594,3 +594,20 @@ POST   /portfolio/simulation { "kind": "growth", "initial_cents": 1000000, "mont
 - `AssetIndicators` refreshes one `AssetIndicator` per listed asset after every sync (`bin/rails market_data:indicators` by hand): FIIs get DY 12m, average and median monthly distribution, consecutive years paying (0 when the latest distribution is older than last year) and P/VP from the latest monthly report; stocks get DY and payout of the last fiscal year, consecutive years paying, P/VP, P/L, average ROE, earnings and equity CAGR (up to 5 years, at least 2), years with profit, net margin and net debt over equity. Every asset gets the 30-day average traded volume. Some companies report the share count in thousands; a market value below 1% of equity is read that way.
 - `GET /assets` returns `indicators` for each asset and filters by `<indicator>_min` / `<indicator>_max` (`invalid_filter` when not an integer), `paying=true` (positive DY, which leaves out FIIs still in development, since CVM's "Mandato" field is empty) and sorts by any indicator (`invalid_sort`). It only filters and sorts: there is no ranking or recommendation.
 - `POST /portfolio/simulation` saves nothing. `income` buys whole shares every month at the latest close and pays the FII's average monthly distribution (or a twelfth of a stock's DY), reinvesting by default, and answers the shares and capital needed for `target_monthly_income_cents`; without `ticker` it applies `monthly_yield_bps`. `growth` compounds the contributions at the rate the user chose. Neither forecasts prices.
+
+### 26. Leftover balance split (Lar em Dia)
+
+```http
+POST   /allocation_targets { "name": "Renda fixa", "mode": "percent", "percent_bps": 1000 }
+POST   /allocation_targets { "name": "Caridade", "mode": "fixed", "amount_cents": 1000 }
+POST   /allocation_targets { "name": "Reserva", "mode": "remainder", "reserve_account_id": "…" }
+GET    /allocation_targets                    PATCH /allocation_targets/:id    DELETE /allocation_targets/:id
+GET    /allocation_plan?month=2026-11         -> month, closing_cents, base_cents, used_cents, planned_cents, unallocated_cents, items
+POST   /allocations { "target_id": "…", "month": "2026-11", "amount_cents": 752 }
+DELETE /allocations/:id
+```
+
+- Destinations (`AllocationTarget`, name encrypted) take a `fixed` amount, a `percent` of the month's balance (`percent_bps`, 10% is 1000) or the `remainder`, at most one per user. The value the mode does not use must be absent (`blank`, `present`). `position` orders them; a new destination goes last.
+- `AllocationPlan` starts from the month's projected closing balance (the same number as `GET /projection`) and adds back what was already used that month, so marking one destination never shrinks the others. Used destinations keep their amount; the others are planned in order up to what is left, and the remainder takes the rest. A month closing at zero or below plans nothing.
+- Marking a destination as used (`Allocation`, once per destination and month, never in a future month: `in_future`) records the planned amount, or the one sent, as a paid expense in the new `surplus_allocation` category (today in the current month, the month's last day in past months), so it comes out of the closing balance. A destination linked to a reserve account goes through `ReserveMovementRecorder` as a deposit with `debit_balance`. Undoing it deletes that expense or deposit (`insufficient_reserve` when a later withdrawal needs it), and deleting the expense from the entries list also undoes it. Deleting a destination keeps the money already used.
+- Destinations and allocations are personal data (`User::PERSONAL_DATA`).
