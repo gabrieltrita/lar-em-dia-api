@@ -78,6 +78,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
     t.integer "financial_years"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "fund_category"
+    t.bigint "development_bps"
+    t.integer "properties_count"
+    t.bigint "largest_property_bps"
+    t.bigint "vacancy_bps"
+    t.bigint "delinquency_bps"
+    t.bigint "largest_tenant_bps"
+    t.integer "months_paying_12m"
     t.index ["asset_id"], name: "index_asset_indicators_on_asset_id", unique: true
   end
 
@@ -205,6 +213,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
     t.index ["user_id"], name: "index_entry_series_on_user_id"
   end
 
+  create_table "fund_compositions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "asset_id", null: false
+    t.date "reference_on", null: false
+    t.bigint "largest_tenant_bps"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id"], name: "index_fund_compositions_on_asset_id", unique: true
+  end
+
+  create_table "fund_properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "fund_composition_id", null: false
+    t.string "name", null: false
+    t.string "kind", null: false
+    t.bigint "area_m2"
+    t.bigint "vacancy_bps"
+    t.bigint "delinquency_bps"
+    t.bigint "revenue_share_bps"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["fund_composition_id"], name: "index_fund_properties_on_fund_composition_id"
+  end
+
   create_table "fund_reports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "asset_id", null: false
     t.date "reference_month", null: false
@@ -214,6 +244,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
     t.integer "shareholders_count", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "category"
+    t.bigint "development_bps"
     t.index ["asset_id", "reference_month"], name: "index_fund_reports_on_asset_id_and_reference_month", unique: true
   end
 
@@ -358,6 +390,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
   add_foreign_key "entries", "entry_series", column: "series_id"
   add_foreign_key "entries", "users"
   add_foreign_key "entry_series", "users"
+  add_foreign_key "fund_compositions", "assets"
+  add_foreign_key "fund_properties", "fund_compositions", on_delete: :cascade
   add_foreign_key "fund_reports", "assets"
   add_foreign_key "identities", "users"
   add_foreign_key "investment_positions", "assets"

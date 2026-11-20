@@ -30,8 +30,34 @@ RSpec.describe AssetIndicators do
 
       expect(fund.reload.indicator).to have_attributes(
         computed_on: today, price_cents: 16_000, liquidity_cents: 151, dy_12m_bps: 288, distribution_average_e8: 115_000_000,
-        distribution_median_e8: 115_000_000, years_paying: 3, p_vp_e2: 97, p_l_e2: nil, roe_average_bps: nil, financial_years: nil
+        distribution_median_e8: 115_000_000, years_paying: 3, p_vp_e2: 97, p_l_e2: nil, roe_average_bps: nil, financial_years: nil,
+        months_paying_12m: 4, fund_category: nil, properties_count: nil
       )
+    end
+
+    it "takes the category from the latest report and the diversification from the latest quarterly portfolio" do
+      FundReport.where(asset: fund, reference_month: Date.new(2026, 9, 1)).update_all(category: "brick", development_bps: 120)
+      composition = create(:fund_composition, asset: fund, largest_tenant_bps: 2_500)
+      create(:fund_property, fund_composition: composition, area_m2: 1_000, vacancy_bps: 1_000, delinquency_bps: 0, revenue_share_bps: 6_000)
+      create(:fund_property, fund_composition: composition, area_m2: 3_000, vacancy_bps: 0, delinquency_bps: 500, revenue_share_bps: 4_000)
+      create(:fund_property, fund_composition: composition, kind: :rent_construction, area_m2: 9_000, vacancy_bps: 10_000, delinquency_bps: nil,
+        revenue_share_bps: nil)
+      create(:fund_property, fund_composition: composition, kind: :sale, revenue_share_bps: 9_000)
+
+      refresh
+
+      expect(fund.reload.indicator).to have_attributes(fund_category: "brick", development_bps: 120, properties_count: 3,
+        largest_property_bps: 6_000, vacancy_bps: 250, delinquency_bps: 200, largest_tenant_bps: 2_500)
+    end
+
+    it "leaves vacancy and delinquency empty when the properties do not report them" do
+      composition = create(:fund_composition, asset: fund)
+      create(:fund_property, fund_composition: composition, area_m2: nil, vacancy_bps: 0, delinquency_bps: nil, revenue_share_bps: nil)
+
+      refresh
+
+      expect(fund.reload.indicator).to have_attributes(properties_count: 1, largest_property_bps: nil, vacancy_bps: nil, delinquency_bps: nil,
+        largest_tenant_bps: nil)
     end
 
     it "takes the middle distribution of an odd count and leaves out what needs a price or a report" do

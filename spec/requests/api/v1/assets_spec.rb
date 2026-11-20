@@ -80,6 +80,21 @@ RSpec.describe "Assets", type: :request do
     expect(json.dig("data", "distributions", 0, "net_amount_per_share_e8")).to eq(85_000_000)
   end
 
+  it "shows an FII's properties from the latest quarterly report, the largest share of revenue first" do
+    fund = create(:asset, :fii, ticker: "HGLG11")
+    composition = create(:fund_composition, asset: fund, largest_tenant_bps: 466)
+    create(:fund_property, fund_composition: composition, name: "Small", revenue_share_bps: 100)
+    create(:fund_property, fund_composition: composition, name: "Land", kind: :sale, area_m2: nil, vacancy_bps: nil, revenue_share_bps: nil)
+    create(:fund_property, fund_composition: composition, name: "Big", revenue_share_bps: 4_000, vacancy_bps: 250)
+
+    get "/api/v1/assets/HGLG11", headers: headers
+
+    expect(json.dig("data", "composition")).to include("reference_on" => "2026-09-30", "largest_tenant_bps" => 466)
+    expect(json.dig("data", "composition", "properties").pluck("name")).to eq(%w[Big Small Land])
+    expect(json.dig("data", "composition", "properties", 0)).to eq("name" => "Big", "kind" => "rent", "area_m2" => 35_331, "vacancy_bps" => 250,
+      "delinquency_bps" => 0, "revenue_share_bps" => 4_000)
+  end
+
   it "answers 404 for an unknown ticker" do
     get "/api/v1/assets/XXXX3", headers: headers
 

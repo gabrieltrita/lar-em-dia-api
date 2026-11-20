@@ -8,5 +8,6 @@ class AssetBlueprint < Blueprinter::Base
     fields :isin, :cnpj, :active
     association :latest_quote, name: :quote, blueprint: AssetQuoteBlueprint
     association :latest_fund_report, name: :fund_report, blueprint: FundReportBlueprint
+    association :fund_composition, name: :composition, blueprint: FundCompositionBlueprint
   end
 end
