@@ -14,7 +14,7 @@
 
 ## What this is
 
-API (Rails 8.1, API-only, Ruby 3.3.13) for **Lar em Dia**, a family budgeting and cash-flow projection app, forked from trita-api. The front end is a separate Flutter project, **lar-em-dia-app** (web, Android and iOS), which consumes this API. Responsibilities here: authentication, roles, security, privacy (LGPD), the shared infrastructure inherited from the base and the Lar em Dia domain described below.
+API (Rails 8.1, API-only, Ruby 3.3.14) for **Lar em Dia**, a family budgeting and cash-flow projection app, forked from trita-api. The front end is a separate Flutter project, **lar-em-dia-app** (web, Android and iOS), which consumes this API. Responsibilities here: authentication, roles, security, privacy (LGPD), the shared infrastructure inherited from the base and the Lar em Dia domain described below.
 
 ## Lar em Dia domain
 
