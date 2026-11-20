@@ -18,7 +18,11 @@ class MarketDataSyncJob < ApplicationJob
     funds = MarketData::CvmFunds.fetch(date.year)
     catalog = MarketData::CatalogSync.call(quotes, funds: funds.funds, companies: MarketData::CvmCompanies.fetch(date.year))
     financials = MarketData::CvmFinancials.fetch(date.year - 1, Asset.stock.where.not(cnpj: nil).distinct.pluck(:cnpj))
-    { **catalog.to_h, **MarketData::FundReportSync.call(funds.reports).to_h, financials_saved: MarketData::FinancialSync.call(financials.to_a) }
+    {
+      **catalog.to_h, **MarketData::FundReportSync.call(funds.reports).to_h,
+      portfolios_saved: MarketData::FundPortfolioSync.call(MarketData::CvmFundPortfolios.fetch(date.year)),
+      financials_saved: MarketData::FinancialSync.call(financials.to_a)
+    }
   end
 
   def log(date, **fields)

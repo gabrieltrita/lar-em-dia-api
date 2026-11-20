@@ -10,10 +10,37 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_007000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "allocation_targets", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "reserve_account_id"
+    t.text "name", null: false
+    t.string "mode", null: false
+    t.bigint "amount_cents"
+    t.integer "percent_bps"
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["reserve_account_id"], name: "index_allocation_targets_on_reserve_account_id"
+    t.index ["user_id", "position"], name: "index_allocation_targets_on_user_id_and_position"
+    t.index ["user_id"], name: "index_allocation_targets_on_user_remainder", unique: true, where: "((mode)::text = 'remainder'::text)"
+  end
+
+  create_table "allocations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "target_id", null: false
+    t.uuid "entry_id", null: false
+    t.date "month", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["entry_id"], name: "index_allocations_on_entry_id", unique: true
+    t.index ["target_id", "month"], name: "index_allocations_on_target_id_and_month", unique: true
+    t.index ["user_id", "month"], name: "index_allocations_on_user_id_and_month"
+  end
 
   create_table "asset_distributions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "asset_id", null: false
@@ -51,6 +78,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_007000) do
     t.integer "financial_years"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "fund_category"
+    t.bigint "development_bps"
+    t.integer "properties_count"
+    t.bigint "largest_property_bps"
+    t.bigint "vacancy_bps"
+    t.bigint "delinquency_bps"
+    t.bigint "largest_tenant_bps"
+    t.integer "months_paying_12m"
     t.index ["asset_id"], name: "index_asset_indicators_on_asset_id", unique: true
   end
 
@@ -178,6 +213,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_007000) do
     t.index ["user_id"], name: "index_entry_series_on_user_id"
   end
 
+  create_table "fund_compositions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "asset_id", null: false
+    t.date "reference_on", null: false
+    t.bigint "largest_tenant_bps"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id"], name: "index_fund_compositions_on_asset_id", unique: true
+  end
+
+  create_table "fund_properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "fund_composition_id", null: false
+    t.string "name", null: false
+    t.string "kind", null: false
+    t.bigint "area_m2"
+    t.bigint "vacancy_bps"
+    t.bigint "delinquency_bps"
+    t.bigint "revenue_share_bps"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["fund_composition_id"], name: "index_fund_properties_on_fund_composition_id"
+  end
+
   create_table "fund_reports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "asset_id", null: false
     t.date "reference_month", null: false
@@ -187,6 +244,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_007000) do
     t.integer "shareholders_count", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "category"
+    t.bigint "development_bps"
     t.index ["asset_id", "reference_month"], name: "index_fund_reports_on_asset_id_and_reference_month", unique: true
   end
 
@@ -315,6 +374,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_007000) do
     t.index ["role"], name: "index_users_on_role"
   end
 
+  add_foreign_key "allocation_targets", "reserve_accounts", on_delete: :nullify
+  add_foreign_key "allocation_targets", "users"
+  add_foreign_key "allocations", "allocation_targets", column: "target_id", on_delete: :cascade
+  add_foreign_key "allocations", "entries", on_delete: :cascade
+  add_foreign_key "allocations", "users"
   add_foreign_key "asset_distributions", "assets"
   add_foreign_key "asset_distributions", "users"
   add_foreign_key "asset_indicators", "assets"
@@ -326,6 +390,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_007000) do
   add_foreign_key "entries", "entry_series", column: "series_id"
   add_foreign_key "entries", "users"
   add_foreign_key "entry_series", "users"
+  add_foreign_key "fund_compositions", "assets"
+  add_foreign_key "fund_properties", "fund_compositions", on_delete: :cascade
   add_foreign_key "fund_reports", "assets"
   add_foreign_key "identities", "users"
   add_foreign_key "investment_positions", "assets"

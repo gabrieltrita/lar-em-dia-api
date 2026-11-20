@@ -30,8 +30,34 @@ RSpec.describe AssetIndicators do
 
       expect(fund.reload.indicator).to have_attributes(
         computed_on: today, price_cents: 16_000, liquidity_cents: 151, dy_12m_bps: 288, distribution_average_e8: 115_000_000,
-        distribution_median_e8: 115_000_000, years_paying: 3, p_vp_e2: 97, p_l_e2: nil, roe_average_bps: nil, financial_years: nil
+        distribution_median_e8: 115_000_000, years_paying: 3, p_vp_e2: 97, p_l_e2: nil, roe_average_bps: nil, financial_years: nil,
+        months_paying_12m: 4, fund_category: nil, properties_count: nil
       )
+    end
+
+    it "takes the category from the latest report and the diversification from the latest quarterly portfolio" do
+      FundReport.where(asset: fund, reference_month: Date.new(2026, 9, 1)).update_all(category: "brick", development_bps: 120)
+      composition = create(:fund_composition, asset: fund, largest_tenant_bps: 2_500)
+      create(:fund_property, fund_composition: composition, area_m2: 1_000, vacancy_bps: 1_000, delinquency_bps: 0, revenue_share_bps: 6_000)
+      create(:fund_property, fund_composition: composition, area_m2: 3_000, vacancy_bps: 0, delinquency_bps: 500, revenue_share_bps: 4_000)
+      create(:fund_property, fund_composition: composition, kind: :rent_construction, area_m2: 9_000, vacancy_bps: 10_000, delinquency_bps: nil,
+        revenue_share_bps: nil)
+      create(:fund_property, fund_composition: composition, kind: :sale, revenue_share_bps: 9_000)
+
+      refresh
+
+      expect(fund.reload.indicator).to have_attributes(fund_category: "brick", development_bps: 120, properties_count: 3,
+        largest_property_bps: 6_000, vacancy_bps: 250, delinquency_bps: 200, largest_tenant_bps: 2_500)
+    end
+
+    it "leaves vacancy and delinquency empty when the properties do not report them" do
+      composition = create(:fund_composition, asset: fund)
+      create(:fund_property, fund_composition: composition, area_m2: nil, vacancy_bps: 0, delinquency_bps: nil, revenue_share_bps: nil)
+
+      refresh
+
+      expect(fund.reload.indicator).to have_attributes(properties_count: 1, largest_property_bps: nil, vacancy_bps: nil, delinquency_bps: nil,
+        largest_tenant_bps: nil)
     end
 
     it "takes the middle distribution of an odd count and leaves out what needs a price or a report" do
@@ -42,6 +68,16 @@ RSpec.describe AssetIndicators do
 
       expect(other.reload.indicator).to have_attributes(price_cents: nil, liquidity_cents: nil, dy_12m_bps: nil, distribution_median_e8: 50_000_000,
         years_paying: 1, p_vp_e2: nil)
+    end
+
+    it "counts no years paying when the fund stopped paying before last year" do
+      other = create(:asset, :fii)
+      create(:asset_distribution, asset: other, record_on: Date.new(2024, 10, 31), amount_per_share_e8: 50_000_000)
+      create(:asset_distribution, asset: other, record_on: Date.new(2023, 10, 31), amount_per_share_e8: 50_000_000)
+
+      refresh
+
+      expect(other.reload.indicator).to have_attributes(dy_12m_bps: nil, years_paying: 0)
     end
 
     it "leaves the income indicators empty without distributions" do
@@ -103,6 +139,14 @@ RSpec.describe AssetIndicators do
 
       expect(preferred.reload.indicator).to have_attributes(dy_12m_bps: nil, payout_bps: nil, p_vp_e2: nil, p_l_e2: nil, net_margin_bps: nil,
         net_debt_to_equity_bps: nil, roe_average_bps: nil, earnings_cagr_bps: nil, equity_cagr_bps: nil, years_with_profit: 3)
+    end
+
+    it "counts no years paying for a company that never paid dividends" do
+      CompanyFinancial.where(cnpj: cnpj).update_all(dividends_paid_cents: 0)
+
+      refresh
+
+      expect(preferred.reload.indicator).to have_attributes(years_paying: 0, dy_12m_bps: 0, payout_bps: 0)
     end
 
     it "needs two years between the statements to compute growth" do

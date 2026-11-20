@@ -240,6 +240,18 @@ RSpec.describe User do
       expect(Entry.exists?(entry.id)).to be(false)
       expect(ReserveMovement.exists?(other.id)).to be(true)
     end
+
+    it "deletes the leftover destinations, their allocations and the entries they created" do
+      allocation = create(:allocation, user: user)
+      other = create(:allocation)
+
+      user.anonymize!
+
+      expect(AllocationTarget.exists?(allocation.target_id)).to be(false)
+      expect(Allocation.exists?(allocation.id)).to be(false)
+      expect(Entry.exists?(allocation.entry_id)).to be(false)
+      expect(Allocation.exists?(other.id)).to be(true)
+    end
   end
 
   describe "2FA" do

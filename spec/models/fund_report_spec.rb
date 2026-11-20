@@ -6,6 +6,7 @@ RSpec.describe FundReport do
   it { is_expected.to belong_to(:asset) }
   it { is_expected.to validate_uniqueness_of(:reference_month).scoped_to(:asset_id) }
   it { is_expected.to validate_numericality_of(:shares_count).only_integer }
+  it { is_expected.to validate_inclusion_of(:category).in_array(FundReport::CATEGORIES).allow_nil }
 
   it "is the asset's latest report by month" do
     newer = create(:fund_report, asset: subject.asset, reference_month: Date.new(2026, 10, 1))
