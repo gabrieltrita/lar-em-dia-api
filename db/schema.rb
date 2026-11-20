@@ -10,10 +10,37 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_001000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "allocation_targets", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "reserve_account_id"
+    t.text "name", null: false
+    t.string "mode", null: false
+    t.bigint "amount_cents"
+    t.integer "percent_bps"
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["reserve_account_id"], name: "index_allocation_targets_on_reserve_account_id"
+    t.index ["user_id", "position"], name: "index_allocation_targets_on_user_id_and_position"
+    t.index ["user_id"], name: "index_allocation_targets_on_user_remainder", unique: true, where: "((mode)::text = 'remainder'::text)"
+  end
+
+  create_table "allocations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "target_id", null: false
+    t.uuid "entry_id", null: false
+    t.date "month", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["entry_id"], name: "index_allocations_on_entry_id", unique: true
+    t.index ["target_id", "month"], name: "index_allocations_on_target_id_and_month", unique: true
+    t.index ["user_id", "month"], name: "index_allocations_on_user_id_and_month"
+  end
 
   create_table "asset_distributions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "asset_id", null: false
@@ -347,6 +374,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_001000) do
     t.index ["role"], name: "index_users_on_role"
   end
 
+  add_foreign_key "allocation_targets", "reserve_accounts", on_delete: :nullify
+  add_foreign_key "allocation_targets", "users"
+  add_foreign_key "allocations", "allocation_targets", column: "target_id", on_delete: :cascade
+  add_foreign_key "allocations", "entries", on_delete: :cascade
+  add_foreign_key "allocations", "users"
   add_foreign_key "asset_distributions", "assets"
   add_foreign_key "asset_distributions", "users"
   add_foreign_key "asset_indicators", "assets"

@@ -58,7 +58,7 @@ info:
     | `only_for_single_entry` | 422 | `status` or `paid_on` changed with an entry `scope` other than `one` |
     | `installment_amount_locked` | 422 | An installment's `amount_cents` changed with a `scope` other than `one` |
     | `insufficient_quantity` | 422 | Deleting an investment transaction would leave a later sale without enough shares |
-    | `insufficient_reserve` | 422 | Deleting an emergency reserve movement would leave a later withdrawal without enough money |
+    | `insufficient_reserve` | 422 | Deleting an emergency reserve movement, or undoing an allocation that deposited into the reserve, would leave a later withdrawal without enough money |
     | `rate_limited` | 429 | Too many requests, see `Retry-After` |
     | `internal_error` | 500 | Unexpected error |
     | `oauth_provider_unavailable` | 503 | The provider's signing keys could not be fetched |
@@ -77,7 +77,10 @@ info:
     split, reverse split or bonus), `rate_required` and `rate_not_allowed` (a reserve account's `cdi_percent_bps` or
     `annual_rate_bps` missing for its kind, or sent to a kind that does not use it), `insufficient_reserve` (a
     withdrawal larger than the account holds on its date), `anchor_not_allowed` (`debit_balance` on a reserve balance
-    anchor) and `required` (a reserve movement's account that does not exist or belongs to someone else).
+    anchor) and `required` (a reserve movement's account, an allocation's `target` or a destination's
+    `reserve_account_id` that does not exist or belongs to someone else), `blank` and `present` (a destination's
+    `amount_cents` or `percent_bps` missing for its mode, or sent to a mode that does not use it) and `in_future` (an
+    allocation in a month after the current one).
 servers:
   - url: /api/v1
 tags:
@@ -100,6 +103,10 @@ tags:
     description: The emergency reserve, built from the user's accounts and movements and valued with the Selic, CDI and
       savings rates published by the Central Bank (SGS series 11, 12, 195 and 432). Amounts are integer cents (BRL) and
       rates are integers in `_e8` (hundred-millionths). Informational only, never investment advice.
+  - name: Allocations
+    description: Destinations of the month's leftover balance (fixed investments, charity, the emergency reserve) by fixed
+      amount, percentage or the remainder. Using one records a paid expense, so it comes out of the month's closing
+      balance; until then the balance stays. Amounts are integer cents (BRL).
   - name: Assets
     description: Catalog of stocks and FIIs listed on B3, with the closing quote of the latest trading day. Quotes come from
       B3's daily COTAHIST file and the registry (CNPJ, full name, sector or FII segment) from CVM open data (ODbL). Amounts
@@ -1165,6 +1172,137 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /allocation_targets:
+    get:
+      tags: [Allocations]
+      summary: List the destinations of the month's leftover balance, in their order
+      responses:
+        "200":
+          description: Destinations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AllocationTarget" }
+    post:
+      tags: [Allocations]
+      summary: Create a destination for the month's leftover balance
+      description: |
+        A `fixed` destination takes `amount_cents` and a `percent` one takes `percent_bps` of the month's balance; the
+        other value must be absent (`blank`, `present`). A `remainder` destination takes whatever the others leave, and a
+        user has at most one (`taken` on `mode`). With `reserve_account_id`, using it deposits into that emergency reserve
+        account. Without `position`, the destination goes after the last one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AllocationTargetInput" }
+      responses:
+        "201": { $ref: "#/components/responses/AllocationTarget" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /allocation_targets/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Allocations]
+      summary: Update a destination
+      description: Changes the plan of every month that has not used it yet; amounts already used stay as they were.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AllocationTargetInput" }
+      responses:
+        "200": { $ref: "#/components/responses/AllocationTarget" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Allocations]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/AllocationTarget" }
+    delete:
+      tags: [Allocations]
+      summary: Delete a destination
+      description: The expenses and reserve deposits it already created stay, because that money was used.
+      responses:
+        "200": { $ref: "#/components/responses/DeletedId" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /allocation_plan:
+    get:
+      tags: [Allocations]
+      summary: How a month's leftover balance is split among the destinations
+      description: |
+        `closing_cents` is the month's projected closing balance (`GET /projection`) and `base_cents` adds back what was
+        already used in the month, so using a destination never shrinks the others. Destinations are planned in order:
+        used ones keep their amount, fixed and percentage ones take their value up to what is left, and the remainder
+        takes the rest. Nothing is planned when the base is not positive.
+      parameters:
+        - { name: month, in: query, schema: { type: string, pattern: "^\\d{4}-(0[1-9]|1[0-2])$" }, description: Defaults to the current month }
+      responses:
+        "200":
+          description: The month's plan
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/AllocationPlan" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /allocations:
+    post:
+      tags: [Allocations]
+      summary: Mark a destination as used in a month
+      description: |
+        Records the planned amount, or `amount_cents`, as a paid expense in the `surplus_allocation` category, today in
+        the current month or on the last day of a past month, so it comes out of that month's closing balance. A
+        destination linked to a reserve account records a reserve deposit with `debit_balance` instead (a paid expense
+        in `reserve_deposit`). Future months are refused (`in_future` on `month`), a month uses each destination once
+        (`taken`), the target must be the user's (`required` on `target`) and the amount must be positive
+        (`greater_than`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_id, month]
+              properties:
+                target_id: { type: string, format: uuid }
+                month: { type: string, pattern: "^\\d{4}-(0[1-9]|1[0-2])$" }
+                amount_cents: { type: integer, minimum: 1, maximum: 10000000000000, description: Defaults to the planned amount }
+      responses:
+        "201":
+          description: Allocation used
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Allocation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /allocations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [Allocations]
+      summary: Undo a used allocation
+      description: Deletes its expense, or its reserve deposit and the deposit's expense, so the balance goes back up.
+      responses:
+        "200": { $ref: "#/components/responses/DeletedId" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: A later reserve withdrawal would be left without enough money (`insufficient_reserve`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /projection:
     get:
       tags: [Projection]
@@ -2248,6 +2386,65 @@ components:
             - { type: "null" }
         market_value_cents: { type: integer, description: Shares times the latest close, or the cost without a quote }
         gain_cents: { type: integer }
+    AllocationTarget:
+      type: object
+      required: [id, name, mode, amount_cents, percent_bps, reserve_account_id, position]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 100 }
+        mode: { type: string, enum: [fixed, percent, remainder] }
+        amount_cents: { type: [integer, "null"], description: Fixed destinations only }
+        percent_bps: { type: [integer, "null"], description: "Percentage of the month's balance in basis points (10% is 1000); percent destinations only" }
+        reserve_account_id: { type: [string, "null"], format: uuid }
+        position: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AllocationTargetInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        mode: { type: string, enum: [fixed, percent, remainder] }
+        amount_cents: { type: [integer, "null"], minimum: 1, maximum: 10000000000000 }
+        percent_bps: { type: [integer, "null"], minimum: 1, maximum: 10000 }
+        reserve_account_id: { type: [string, "null"], format: uuid }
+        position: { type: integer, minimum: 0 }
+    AllocationPlan:
+      type: object
+      required: [month, closing_cents, base_cents, used_cents, planned_cents, unallocated_cents, items]
+      properties:
+        month: { type: string, example: "2026-11" }
+        closing_cents: { type: integer, description: The month's projected closing balance, after what was used }
+        base_cents: { type: integer, description: The closing balance plus what was used in the month }
+        used_cents: { type: integer }
+        planned_cents: { type: integer, description: Used plus still planned }
+        unallocated_cents: { type: integer, description: Base minus planned }
+        items:
+          type: array
+          items:
+            type: object
+            required: [target_id, name, mode, amount_cents, percent_bps, reserve_account_id, used, allocation_id, used_on]
+            properties:
+              target_id: { type: string, format: uuid }
+              name: { type: string }
+              mode: { type: string, enum: [fixed, percent, remainder] }
+              amount_cents: { type: integer, minimum: 0, description: The amount used, or else the planned amount }
+              percent_bps: { type: [integer, "null"] }
+              reserve_account_id: { type: [string, "null"], format: uuid }
+              used: { type: boolean }
+              allocation_id: { type: [string, "null"], format: uuid }
+              used_on: { type: [string, "null"], format: date }
+    Allocation:
+      type: object
+      required: [id, target_id, entry_id, month, amount_cents, used_on]
+      properties:
+        id: { type: string, format: uuid }
+        target_id: { type: string, format: uuid }
+        entry_id: { type: string, format: uuid, description: The paid expense that took the money out of the balance }
+        month: { type: string, example: "2026-11" }
+        amount_cents: { type: integer }
+        used_on: { type: string, format: date }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     ReserveAccount:
       type: object
       required: [id, name, kind, cdi_percent_bps, annual_rate_bps, tax_exempt]
@@ -2758,6 +2955,15 @@ components:
         provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
         id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
+    AllocationTarget:
+      description: Destination of the month's leftover balance
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/AllocationTarget" }
     ReserveAccount:
       description: Emergency reserve account
       content:

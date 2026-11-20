@@ -16,6 +16,9 @@ resources :reserve_movements, only: %i[index show create update destroy]
 resource :reserve, only: %i[show update] do
   get :projection
 end
+resources :allocation_targets, only: %i[index create update destroy]
+resources :allocations, only: %i[create destroy]
+resource :allocation_plan, only: :show
 resource :projection, only: :show do
   post :simulation
 end
