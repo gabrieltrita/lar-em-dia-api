@@ -24,6 +24,7 @@ class Entry < ApplicationRecord
   validates :nature, presence: true, if: :expense?
   validates :nature, absence: { message: :only_for_expenses }, if: :income?
   validate :category_active, if: :category_id_changed?
+  validate :category_available, if: :category_id_changed?
 
   scope :chronological, -> { order(:due_on, :created_at) }
 
@@ -39,5 +40,9 @@ class Entry < ApplicationRecord
 
   def category_active
     errors.add(:category, :inactive) if category && !category.active?
+  end
+
+  def category_available
+    errors.add(:category, :required) if category && !category.available_to?(user)
   end
 end

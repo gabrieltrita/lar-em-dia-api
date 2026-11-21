@@ -42,6 +42,58 @@ RSpec.describe Category do
     expect(category.errors.details[:base].first[:error]).to eq(:"restrict_dependent_destroy.has_many")
   end
 
+  describe "user categories" do
+    let(:user) { create(:user) }
+
+    it { is_expected.to belong_to(:user).optional }
+
+    it "generates a custom key and goes after the user's other categories" do
+      first = described_class.create!(user: user, kind: :expense, name: "  Pet   care ", default_nature: :variable)
+      second = described_class.create!(user: user, kind: :income, name: "Freelance", position: 0)
+      create(:category, :expense, user: create(:user), position: 9)
+
+      expect(first.key).to match(/\Acustom_[0-9a-f]{16}\z/)
+      expect(first).to have_attributes(name: "Pet care", position: 1, custom?: true)
+      expect(second.position).to eq(2)
+      expect(build(:category)).not_to be_custom
+    end
+
+    it "keeps the name encrypted" do
+      category = create(:category, user: user, name: "Vet")
+
+      expect(described_class.connection.select_value("SELECT name FROM categories WHERE id = '#{category.id}'")).not_to include("Vet")
+    end
+
+    it "limits how many categories a user creates" do
+      stub_const("Category::MAX_PER_USER", 1)
+      create(:category, user: user)
+
+      category = build(:category, user: user)
+      expect(category).not_to be_valid
+      expect(category.errors.details[:base]).to include(error: :too_many_categories, count: 1)
+      expect(build(:category, user: create(:user))).to be_valid
+    end
+
+    it "is available only to its owner, while global ones are available to everyone" do
+      category = create(:category, user: user)
+      global = create(:category)
+
+      expect(category.available_to?(user)).to be(true)
+      expect(category.available_to?(create(:user))).to be(false)
+      expect(category.available_to?(nil)).to be(false)
+      expect(global.available_to?(create(:user))).to be(true)
+      expect(described_class.available_to(user)).to contain_exactly(category, global)
+      expect(described_class.global).to contain_exactly(global)
+    end
+
+    it "lists the global categories before the user's own" do
+      custom = create(:category, user: user, position: 0)
+      global = create(:category, position: 5)
+
+      expect(described_class.ordered).to eq([ global, custom ])
+    end
+  end
+
   describe ".seed_defaults!" do
     it "creates the default income categories in order, once" do
       2.times { described_class.seed_defaults! }

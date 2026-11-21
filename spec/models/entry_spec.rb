@@ -83,6 +83,19 @@ RSpec.describe Entry do
     expect(entry.errors.details[:category]).to include(error: :inactive)
   end
 
+  it "accepts the global categories and the user's own, but not someone else's" do
+    user = create(:user)
+    own = create(:category, :expense, user: user)
+    other = create(:category, :expense, user: create(:user))
+
+    expect(build(:entry, user: user, category: own)).to be_valid
+    expect(build(:entry, user: user, category: create(:category))).to be_valid
+
+    entry = build(:entry, user: user, category: other)
+    expect(entry).not_to be_valid
+    expect(entry.errors.details[:category]).to include(error: :required)
+  end
+
   it "lists by due date, then creation" do
     user = create(:user)
     later = create(:entry, user: user, due_on: Date.current + 1)

@@ -58,6 +58,7 @@ info:
     | `only_for_single_entry` | 422 | `status` or `paid_on` changed with an entry `scope` other than `one` |
     | `installment_amount_locked` | 422 | An installment's `amount_cents` changed with a `scope` other than `one` |
     | `insufficient_quantity` | 422 | Deleting an investment transaction would leave a later sale without enough shares |
+    | `category_in_use` | 422 | A user's own category still has entries and cannot be deleted |
     | `insufficient_reserve` | 422 | Deleting an emergency reserve movement, or undoing an allocation that deposited into the reserve, would leave a later withdrawal without enough money |
     | `rate_limited` | 429 | Too many requests, see `Retry-After` |
     | `internal_error` | 500 | Unexpected error |
@@ -70,6 +71,8 @@ info:
     `greater_than_or_equal_to`, `less_than_or_equal_to` (series `entries_count` and `total_cents`, and amounts above
     100,000,000,000.00 or a balance below its negative) and `present` (series `entries_count` and `total_cents`), and
     `immutable` (a category's `key` or `kind` after it is created, or an investment transaction's `ticker`),
+    `too_many_categories` (on `base`, a user's own category beyond the limit of 50), `required` (an entry's
+    `category` that belongs to someone else),
     `unknown_asset` (a `ticker` that is not in the catalog, or a distribution's `ticker` without a position),
     `stock_only` (a distribution recorded by hand on an FII), `before_record_on` (a distribution paid before its record
     date), `no_income_data` (a simulation `ticker` without a price or distributions to project), `insufficient_quantity` (a transaction that would leave the
@@ -942,6 +945,7 @@ paths:
     get:
       tags: [Categories]
       summary: List the active categories, by kind and position
+      description: The global catalog first and then the user's own categories (`custom`), each by position.
       parameters:
         - { name: kind, in: query, schema: { type: string, enum: [income, expense] } }
       responses:
@@ -955,6 +959,64 @@ paths:
                   data:
                     type: array
                     items: { $ref: "#/components/schemas/Category" }
+    post:
+      tags: [Categories]
+      summary: Create one of the user's own categories
+      description: |
+        Only the user sees and uses it. The API generates its `key` (`custom_` and random characters), so clients show
+        its `name`; it goes after the user's other categories. Expense categories require `default_nature` and income
+        ones refuse it (`only_for_expenses`). A user has at most 50 (`too_many_categories` on `base`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, name]
+              properties:
+                kind: { type: string, enum: [income, expense] }
+                name: { type: string, maxLength: 100, example: Pet }
+                default_nature: { type: [string, "null"], enum: [fixed, variable, null] }
+      responses:
+        "201": { $ref: "#/components/responses/Category" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /categories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [Categories]
+      summary: Rename one of the user's own categories or change its default nature
+      description: The global catalog is only changed by admins (`/admin/categories`); its ids answer 404 here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                default_nature: { type: [string, "null"], enum: [fixed, variable, null] }
+      responses:
+        "200": { $ref: "#/components/responses/Category" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    put:
+      tags: [Categories]
+      summary: Same as PATCH
+      responses:
+        "200": { $ref: "#/components/responses/Category" }
+    delete:
+      tags: [Categories]
+      summary: Delete one of the user's own categories
+      description: Refused while any entry uses it (`category_in_use`); move or delete those entries first.
+      responses:
+        "200": { $ref: "#/components/responses/DeletedId" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Entries still use the category (`category_in_use`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /balances:
     get:
       tags: [Balances]
@@ -2307,6 +2369,7 @@ components:
         name: { type: string, example: Salary }
         position: { type: integer }
         default_nature: { type: [string, "null"], enum: [fixed, variable, null], description: Expense categories only }
+        custom: { type: boolean, description: "True on the user's own categories, which clients label by `name`" }
     AdminCategory:
       allOf:
         - $ref: "#/components/schemas/Category"
@@ -2875,9 +2938,10 @@ components:
           description: Expenses of the month summed by category, largest first (ties by key)
           items:
             type: object
-            required: [category_key, amount_cents]
+            required: [category_key, category_name, amount_cents]
             properties:
               category_key: { type: string, example: housing }
+              category_name: { type: string, example: Housing, description: "Label for keys the client does not translate, such as the user's own categories" }
               amount_cents: { type: integer, minimum: 0 }
     AdminMetrics:
       type: object
@@ -2955,6 +3019,15 @@ components:
         provider: { type: string, enum: [google, apple], description: "Provider of id_token; defaults to google" }
         id_token: { type: string, description: "Fresh provider ID token of an account already linked; re-authenticates an account without a password" }
   responses:
+    Category:
+      description: Category
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: "#/components/schemas/Category" }
     AllocationTarget:
       description: Destination of the month's leftover balance
       content:

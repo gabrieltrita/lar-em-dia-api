@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -145,14 +145,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
   create_table "categories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "kind", null: false
     t.string "key", null: false
-    t.string "name", null: false
+    t.text "name", null: false
     t.integer "position", default: 0, null: false
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "default_nature"
+    t.uuid "user_id"
     t.index ["key"], name: "index_categories_on_key", unique: true
     t.index ["kind", "position"], name: "index_categories_on_kind_and_position"
+    t.index ["user_id"], name: "index_categories_on_user_id"
   end
 
   create_table "company_financials", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -385,6 +387,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
   add_foreign_key "asset_quotes", "assets"
   add_foreign_key "audit_logs", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "balances", "users"
+  add_foreign_key "categories", "users"
   add_foreign_key "consents", "users", on_delete: :cascade
   add_foreign_key "entries", "categories"
   add_foreign_key "entries", "entry_series", column: "series_id"

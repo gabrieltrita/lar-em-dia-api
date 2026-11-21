@@ -26,7 +26,7 @@ RSpec.describe "Projection", type: :request do
       "fixed_expense_cents" => 30_000, "variable_expense_cents" => 0, "closing_cents" => 70_000,
       "savings_cents" => -30_000, "negative" => false, "reserve_cents" => 0, "investment_income_cents" => 0,
       "investments_value_cents" => 0, "net_worth_cents" => 70_000,
-      "expense_by_category" => [ { "category_key" => "rent", "amount_cents" => 30_000 } ]
+      "expense_by_category" => [ { "category_key" => "rent", "category_name" => "Category", "amount_cents" => 30_000 } ]
     )
     expect(json.dig("data", "alerts")).to eq("first_negative_month" => nil, "negative_months_count" => 0)
     expect(json.dig("data", "last_entry_month")).to eq("2026-11")
