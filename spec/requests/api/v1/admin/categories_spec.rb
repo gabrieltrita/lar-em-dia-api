@@ -19,6 +19,14 @@ RSpec.describe "Admin::Categories", type: :request do
       expect(json["data"].pluck("key")).to eq(%w[salary])
     end
 
+    it "leaves out the categories users created for themselves" do
+      create(:category, :expense, user: create(:user), name: "Vet")
+
+      get "/api/v1/admin/categories", headers: headers
+
+      expect(json["data"].pluck("key")).to eq(%w[groceries old_stuff salary])
+    end
+
     it "is only for admins" do
       get "/api/v1/admin/categories", headers: auth_headers(create(:user))
       expect(response).to have_http_status(:forbidden)
@@ -82,6 +90,12 @@ RSpec.describe "Admin::Categories", type: :request do
       expect(json.dig("error", "details", "key", 0, "code")).to eq("immutable")
       expect(json.dig("error", "details", "kind", 0, "code")).to eq("immutable")
       expect(groceries.reload.key).to eq("groceries")
+    end
+
+    it "answers 404 for a category a user created" do
+      patch "/api/v1/admin/categories/#{create(:category, user: create(:user)).id}", params: { name: "Renamed" }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:not_found)
     end
 
     it "answers 404 for an unknown category and 403 for non-admins" do

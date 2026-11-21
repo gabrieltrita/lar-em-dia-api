@@ -1,5 +1,7 @@
 class Category < ApplicationRecord
   KEY_FORMAT = /\A[a-z][a-z0-9_]*\z/
+  CUSTOM_KEY_PREFIX = "custom_"
+  MAX_PER_USER = 50
 
   DEFAULTS = {
     income: {
@@ -48,7 +50,15 @@ class Category < ApplicationRecord
   enum :kind, { income: "income", expense: "expense" }, validate: true
   enum :default_nature, { fixed: "fixed", variable: "variable" }, prefix: :default, validate: { allow_nil: true }
 
+  belongs_to :user, optional: true
   has_many :entries, dependent: :restrict_with_error
+
+  encrypts :name
+
+  normalizes :name, with: ->(value) { value.strip.squish }
+
+  before_validation :assign_custom_key, on: :create, if: :user
+  before_validation :append_position, on: :create, if: :user
 
   validates :key, presence: true, uniqueness: true, format: { with: KEY_FORMAT }, length: { maximum: 50 }
   validates :name, presence: true, length: { maximum: 100 }
@@ -56,9 +66,12 @@ class Category < ApplicationRecord
   validates :default_nature, presence: true, if: :expense?
   validates :default_nature, absence: { message: :only_for_expenses }, if: :income?
   validate :key_and_kind_unchanged, on: :update
+  validate :within_user_limit, on: :create, if: :user
 
   scope :active, -> { where(active: true) }
-  scope :ordered, -> { order(:kind, :position, :key) }
+  scope :ordered, -> { order(:kind, Arel.sql("categories.user_id IS NOT NULL"), :position, :key) }
+  scope :global, -> { where(user_id: nil) }
+  scope :available_to, ->(user) { where(user_id: [ nil, user.id ]) }
 
   def self.seed_defaults!
     DEFAULTS.each do |kind, categories|
@@ -76,7 +89,27 @@ class Category < ApplicationRecord
     FIXED_EXPENSES.include?(key) ? "fixed" : "variable"
   end
 
+  def custom?
+    user_id.present?
+  end
+
+  def available_to?(user)
+    !custom? || user_id == user&.id
+  end
+
   private
+
+  def assign_custom_key
+    self.key = "#{CUSTOM_KEY_PREFIX}#{SecureRandom.hex(8)}"
+  end
+
+  def append_position
+    self.position = Category.where(user_id: user_id).maximum(:position).to_i + 1
+  end
+
+  def within_user_limit
+    errors.add(:base, :too_many_categories, count: MAX_PER_USER) if Category.where(user_id: user_id).count >= MAX_PER_USER
+  end
 
   def key_and_kind_unchanged
     %i[key kind].each { |attribute| errors.add(attribute, :immutable) if attribute_changed?(attribute) }

@@ -4,7 +4,7 @@ module Api
       class CategoriesController < BaseController
         def index
           authorize Category, :manage?
-          categories = Category.ordered
+          categories = Category.global.ordered
           categories = categories.where(kind: params[:kind]) if Category.kinds.key?(params[:kind])
           render json: { data: CategoryBlueprint.render_as_hash(categories, view: :admin) }
         end
@@ -22,7 +22,7 @@ module Api
         end
 
         def update
-          category = Category.find(params[:id])
+          category = Category.global.find(params[:id])
           authorize category
 
           if category.update(category_params)

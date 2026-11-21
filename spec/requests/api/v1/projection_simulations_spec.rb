@@ -43,7 +43,7 @@ RSpec.describe "Projection simulation", type: :request do
     expect(response).to have_http_status(:ok)
     expect(json.dig("data", "simulated", "months").size).to eq(37)
     expect(json.dig("data", "simulated", "last_entry_month")).to eq("2029-11")
-    expect(json.dig("data", "simulated", "months", 1, "expense_by_category")).to eq([ { "category_key" => expense.key, "amount_cents" => 10_000 } ])
+    expect(json.dig("data", "simulated", "months", 1, "expense_by_category")).to eq([ { "category_key" => expense.key, "category_name" => expense.name, "amount_cents" => 10_000 } ])
     expect(json.dig("data", "baseline", "last_entry_month")).to be_nil
   end
 

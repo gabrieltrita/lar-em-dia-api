@@ -3,8 +3,8 @@ require "rails_helper"
 RSpec.describe Projection do
   let(:user) { create(:user) }
   let(:salary) { create(:category) }
-  let(:rent) { create(:category, :expense, key: "rent", default_nature: :fixed) }
-  let(:groceries) { create(:category, :expense, key: "food", default_nature: :variable) }
+  let(:rent) { create(:category, :expense, key: "rent", name: "Rent", default_nature: :fixed) }
+  let(:groceries) { create(:category, :expense, key: "food", name: "Food", default_nature: :variable) }
 
   def projection(from, months)
     described_class.new(user: user, from: Date.iso8601(from), months: months).months
@@ -91,14 +91,21 @@ RSpec.describe Projection do
     october, november, december = projection("2026-10-01", 3)
 
     expect(october[:expense_by_category]).to eq([])
-    expect(november[:expense_by_category]).to eq([ { category_key: "food", amount_cents: 45_000 }, { category_key: "rent", amount_cents: 30_000 } ])
-    expect(december[:expense_by_category]).to eq([ { category_key: "food", amount_cents: 10_000 } ])
+    expect(november[:expense_by_category]).to eq([ { category_key: "food", category_name: "Food", amount_cents: 45_000 }, { category_key: "rent", category_name: "Rent", amount_cents: 30_000 } ])
+    expect(december[:expense_by_category]).to eq([ { category_key: "food", category_name: "Food", amount_cents: 10_000 } ])
   end
 
   it "breaks ties between categories by key" do
     create(:entry, user: user, category: groceries, amount_cents: 30_000, due_on: "2026-11-25")
 
     expect(projection("2026-11-01", 1).first[:expense_by_category].pluck(:category_key)).to eq(%w[food rent])
+  end
+
+  it "names the user's own categories" do
+    pet = create(:category, :expense, user: user, name: "Pet")
+    create(:entry, user: user, category: pet, amount_cents: 50_000, due_on: "2026-11-25")
+
+    expect(projection("2026-11-01", 1).first[:expense_by_category].first).to eq(category_key: pet.key, category_name: "Pet", amount_cents: 50_000)
   end
 
   it "adds the expenses of extra entries to their categories" do
@@ -109,7 +116,7 @@ RSpec.describe Projection do
     ].each(&:validate)
     rows = described_class.new(user: user, from: Date.new(2026, 11, 1), months: 1, extra_entries: extra).months
 
-    expect(rows.first[:expense_by_category]).to eq([ { category_key: "rent", amount_cents: 30_000 }, { category_key: "food", amount_cents: 7_000 } ])
+    expect(rows.first[:expense_by_category]).to eq([ { category_key: "rent", category_name: "Rent", amount_cents: 30_000 }, { category_key: "food", category_name: "Food", amount_cents: 7_000 } ])
   end
 
   describe "through the last entry" do

@@ -23,6 +23,8 @@ en:
               immutable: "cannot be changed after the category is created"
             kind:
               immutable: "cannot be changed after the category is created"
+            base:
+              too_many_categories: "You can create at most %{count} categories"
         balance:
           attributes:
             as_of:

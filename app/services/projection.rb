@@ -83,8 +83,8 @@ class Projection
 
   def expense_by_category(month)
     category_totals.fetch(month, {})
-      .sort_by { |key, cents| [ -cents, key ] }
-      .map { |key, cents| { category_key: key, amount_cents: cents } }
+      .sort_by { |category, cents| [ -cents, category.key ] }
+      .map { |category, cents| { category_key: category.key, category_name: category.name, amount_cents: cents } }
   end
 
   def last_due_on
@@ -147,18 +147,21 @@ class Projection
     @category_totals ||= @entries
       .expense
       .where(due_on: period)
-      .joins(:category)
-      .group(MONTH_OF_DUE_ON, "categories.key")
+      .group(MONTH_OF_DUE_ON, :category_id)
       .sum(:amount_cents)
-      .each_with_object(Hash.new { |hash, key| hash[key] = Hash.new(0) }) do |((month, key), cents), totals|
-        totals[month][key] += cents
+      .each_with_object(Hash.new { |hash, key| hash[key] = Hash.new(0) }) do |((month, category_id), cents), totals|
+        totals[month][categories_by_id.fetch(category_id)] += cents
       end
       .tap { |totals| add_extra_categories(totals) }
   end
 
+  def categories_by_id
+    @categories_by_id ||= Category.where(id: @entries.expense.where(due_on: period).select(:category_id)).index_by(&:id)
+  end
+
   def add_extra_categories(totals)
     extra_entries_in_period.select(&:expense?).each do |entry|
-      totals[entry.due_on.beginning_of_month][entry.category.key] += entry.amount_cents
+      totals[entry.due_on.beginning_of_month][entry.category] += entry.amount_cents
     end
   end
 

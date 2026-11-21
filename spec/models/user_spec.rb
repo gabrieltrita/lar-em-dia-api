@@ -252,6 +252,17 @@ RSpec.describe User do
       expect(Entry.exists?(allocation.entry_id)).to be(false)
       expect(Allocation.exists?(other.id)).to be(true)
     end
+
+    it "deletes the user's own categories after the entries that use them" do
+      category = create(:category, :expense, user: user)
+      create(:entry, user: user, category: category)
+      global = create(:category)
+
+      user.anonymize!
+
+      expect(Category.exists?(category.id)).to be(false)
+      expect(Category.exists?(global.id)).to be(true)
+    end
   end
 
   describe "2FA" do
