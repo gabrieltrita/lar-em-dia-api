@@ -4,6 +4,7 @@ class AllocationTarget < ApplicationRecord
 
   belongs_to :user
   belongs_to :reserve_account, optional: true
+  belongs_to :category, optional: true
   has_many :allocations, foreign_key: :target_id, dependent: :delete_all, inverse_of: :target
 
   enum :mode, { fixed: "fixed", percent: "percent", remainder: "remainder" }, validate: true
@@ -21,6 +22,7 @@ class AllocationTarget < ApplicationRecord
   validates :mode, uniqueness: { scope: :user_id }, if: :remainder?
   validate :values_match_mode
   validate :reserve_account_owned
+  validate :category_available
 
   scope :ordered, -> { order(:position, :created_at) }
 
@@ -42,5 +44,12 @@ class AllocationTarget < ApplicationRecord
 
   def reserve_account_owned
     errors.add(:reserve_account_id, :required) if reserve_account_id && reserve_account&.user_id != user_id
+  end
+
+  def category_available
+    return unless category_id
+    return errors.add(:category_id, :required) unless category
+
+    errors.add(:category_id, :inclusion) if category.income? || (category_id_changed? && !category.active?)
   end
 end

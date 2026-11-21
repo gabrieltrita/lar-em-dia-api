@@ -56,4 +56,20 @@ RSpec.describe AllocationTarget do
     expect(other.errors.details[:reserve_account_id].pluck(:error)).to eq([ :required ])
     expect(missing).not_to be_valid
   end
+
+  it "accepts only active expense categories" do
+    expense = create(:category, :expense)
+    target = create(:allocation_target, user: user, category: expense)
+    errors = lambda do |attributes|
+      candidate = build(:allocation_target, user: user, **attributes)
+      candidate.validate
+      candidate.errors.details[:category_id].pluck(:error)
+    end
+
+    expect(errors.call(category: create(:category))).to eq([ :inclusion ])
+    expect(errors.call(category: create(:category, :expense, :inactive))).to eq([ :inclusion ])
+    expect(errors.call(category_id: SecureRandom.uuid)).to eq([ :required ])
+    expense.update!(active: false)
+    expect(target.reload).to be_valid
+  end
 end

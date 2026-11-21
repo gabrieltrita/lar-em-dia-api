@@ -29,6 +29,10 @@ RSpec.describe "Allocation targets", type: :request do
     put "/api/v1/allocation_targets/#{id}", params: { position: 5 }, headers: headers, as: :json
     expect(response).to have_http_status(:ok)
     expect(json.dig("data", "position")).to eq(5)
+
+    pets = create(:category, :expense, key: "pets_test")
+    patch "/api/v1/allocation_targets/#{id}", params: { category_id: pets.id }, headers: headers, as: :json
+    expect(json.dig("data", "category_id")).to eq(pets.id)
   end
 
   it "answers validation errors with stable codes" do
@@ -41,6 +45,10 @@ RSpec.describe "Allocation targets", type: :request do
     patch "/api/v1/allocation_targets/#{target.id}", params: { reserve_account_id: create(:reserve_account).id }, headers: headers, as: :json
     expect(response).to have_http_status(:unprocessable_content)
     expect(json.dig("error", "details", "reserve_account_id", 0, "code")).to eq("required")
+
+    patch "/api/v1/allocation_targets/#{target.id}", params: { category_id: create(:category).id }, headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(json.dig("error", "details", "category_id", 0, "code")).to eq("inclusion")
   end
 
   it "deletes a destination and keeps the expenses it created" do
