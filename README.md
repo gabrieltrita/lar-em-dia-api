@@ -173,7 +173,7 @@ Variables to export (shell or password manager; `.kamal/secrets` only holds refe
 
 Commands: `bin/kamal setup` the first time (installs Docker, boots the accessories, the proxy and the app), `bin/kamal deploy` afterwards, `bin/kamal rollback VERSION`, and the aliases `bin/kamal console`, `shell`, `logs` and `dbc`. The web container runs `db:prepare` on start, so migrations apply on every deploy.
 
-`make bash` opens a shell in the running production web container over SSH, without loading the Kamal configuration, so it only needs `DEPLOY_HOST` (and `DEPLOY_SSH_USER` when it is not `root`) exported or passed on the command line (`make bash DEPLOY_HOST=203.0.113.10`). `ROLE=job` opens the Sidekiq container instead and `DESTINATION=staging` targets staging (`make bash DESTINATION=staging ROLE=job`).
+`make bash`, run on the server itself (copy the `Makefile` there), opens a shell in the running production web container: it finds the container through the labels Kamal sets (`role` and a `service` ending in `-api`), so it needs no configuration. `ROLE=job` opens the Sidekiq container instead and `DESTINATION=staging` targets staging (`make bash DESTINATION=staging ROLE=job`).
 
 Changing `SECRET_KEY_BASE` invalidates every user's 2FA backup codes.
 
