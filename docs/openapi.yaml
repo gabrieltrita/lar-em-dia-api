@@ -78,7 +78,8 @@ info:
     `annual_rate_bps` missing for its kind, or sent to a kind that does not use it), `insufficient_reserve` (a
     withdrawal larger than the account holds on its date), `anchor_not_allowed` (`debit_balance` on a reserve balance
     anchor) and `required` (a reserve movement's account, an allocation's `target` or a destination's
-    `reserve_account_id` that does not exist or belongs to someone else), `blank` and `present` (a destination's
+    `reserve_account_id` or `category_id` that does not exist or belongs to someone else), `inclusion` (a destination's
+    `category_id` that is an income category or no longer active), `blank` and `present` (a destination's
     `amount_cents` or `percent_bps` missing for its mode, or sent to a mode that does not use it) and `in_future` (an
     allocation in a month after the current one).
 servers:
@@ -2388,7 +2389,7 @@ components:
         gain_cents: { type: integer }
     AllocationTarget:
       type: object
-      required: [id, name, mode, amount_cents, percent_bps, reserve_account_id, position]
+      required: [id, name, mode, amount_cents, percent_bps, reserve_account_id, category_id, position]
       properties:
         id: { type: string, format: uuid }
         name: { type: string, maxLength: 100 }
@@ -2396,6 +2397,7 @@ components:
         amount_cents: { type: [integer, "null"], description: Fixed destinations only }
         percent_bps: { type: [integer, "null"], description: "Percentage of the month's balance in basis points (10% is 1000); percent destinations only" }
         reserve_account_id: { type: [string, "null"], format: uuid }
+        category_id: { type: [string, "null"], format: uuid, description: An expense category that labels the destination }
         position: { type: integer, minimum: 0 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -2407,6 +2409,7 @@ components:
         amount_cents: { type: [integer, "null"], minimum: 1, maximum: 10000000000000 }
         percent_bps: { type: [integer, "null"], minimum: 1, maximum: 10000 }
         reserve_account_id: { type: [string, "null"], format: uuid }
+        category_id: { type: [string, "null"], format: uuid, description: An active expense category }
         position: { type: integer, minimum: 0 }
     AllocationPlan:
       type: object
@@ -2422,7 +2425,7 @@ components:
           type: array
           items:
             type: object
-            required: [target_id, name, mode, amount_cents, percent_bps, reserve_account_id, used, allocation_id, used_on]
+            required: [target_id, name, mode, amount_cents, percent_bps, reserve_account_id, category_id, used, allocation_id, used_on]
             properties:
               target_id: { type: string, format: uuid }
               name: { type: string }
@@ -2430,6 +2433,7 @@ components:
               amount_cents: { type: integer, minimum: 0, description: The amount used, or else the planned amount }
               percent_bps: { type: [integer, "null"] }
               reserve_account_id: { type: [string, "null"], format: uuid }
+              category_id: { type: [string, "null"], format: uuid }
               used: { type: boolean }
               allocation_id: { type: [string, "null"], format: uuid }
               used_on: { type: [string, "null"], format: date }

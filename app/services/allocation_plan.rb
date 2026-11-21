@@ -50,6 +50,7 @@ class AllocationPlan
       amount_cents: planned,
       percent_bps: target.percent_bps,
       reserve_account_id: target.reserve_account_id,
+      category_id: target.category_id,
       used: false,
       allocation_id: nil,
       used_on: nil

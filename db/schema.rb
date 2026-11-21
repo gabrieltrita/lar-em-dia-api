@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_002000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -25,6 +25,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
     t.integer "position", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.uuid "category_id"
+    t.index ["category_id"], name: "index_allocation_targets_on_category_id"
     t.index ["reserve_account_id"], name: "index_allocation_targets_on_reserve_account_id"
     t.index ["user_id", "position"], name: "index_allocation_targets_on_user_id_and_position"
     t.index ["user_id"], name: "index_allocation_targets_on_user_remainder", unique: true, where: "((mode)::text = 'remainder'::text)"
@@ -374,6 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_002000) do
     t.index ["role"], name: "index_users_on_role"
   end
 
+  add_foreign_key "allocation_targets", "categories"
   add_foreign_key "allocation_targets", "reserve_accounts", on_delete: :nullify
   add_foreign_key "allocation_targets", "users"
   add_foreign_key "allocations", "allocation_targets", column: "target_id", on_delete: :cascade

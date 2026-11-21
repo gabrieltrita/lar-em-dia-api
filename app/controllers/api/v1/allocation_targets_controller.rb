@@ -1,7 +1,7 @@
 module Api
   module V1
     class AllocationTargetsController < ApplicationController
-      FIELDS = %i[name mode amount_cents percent_bps reserve_account_id position].freeze
+      FIELDS = %i[name mode amount_cents percent_bps reserve_account_id category_id position].freeze
 
       before_action :set_target, only: %i[update destroy]
 
