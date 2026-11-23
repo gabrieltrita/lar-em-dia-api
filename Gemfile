@@ -22,7 +22,7 @@ gem "sidekiq", "~> 8.1"
 gem "sidekiq-cron", "~> 2.0"
 gem "connection_pool", "~> 3.0"
 
-gem "sentry-ruby", "~> 7.2"
+gem "sentry-ruby", "~> 7.3"
 gem "sentry-rails", "~> 7.1"
 gem "sentry-sidekiq", "~> 7.1"
 
@@ -33,7 +33,7 @@ gem "blueprinter", "~> 1.1"
 gem "csv", "~> 3.3"
 gem "rubyzip", "~> 3.2", require: "zip"
 
-gem "lograge", "~> 0.15"
+gem "lograge", "~> 0.16"
 
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
@@ -42,7 +42,7 @@ group :development, :test do
   gem "rubocop-rails-omakase", require: false
 
   gem "dotenv-rails"
-  gem "rspec-rails", "~> 8.0"
+  gem "rspec-rails", "~> 8.1"
   gem "factory_bot_rails"
   gem "faker"
   gem "parallel_tests", "~> 5.9"
@@ -55,6 +55,6 @@ end
 group :test do
   gem "shoulda-matchers", "~> 8.0"
   gem "simplecov", require: false
-  gem "openapi_first", "~> 4.2", require: false
-  gem "webmock", "~> 3.34", require: false
+  gem "openapi_first", "~> 4.4", require: false
+  gem "webmock", "~> 3.35", require: false
 end
